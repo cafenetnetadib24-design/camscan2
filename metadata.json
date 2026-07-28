@@ -1,0 +1,8 @@
+{
+  "name": "Remix DocScanner",
+  "description": "Professional document scanner app with auto edge detection, PDF export, ML Kit OCR, and smart folder organization.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

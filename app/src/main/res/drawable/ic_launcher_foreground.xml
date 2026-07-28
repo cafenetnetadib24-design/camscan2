@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Document Base -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,24 h28 l12,12 v48 c0,2.2 -1.8,4 -4,4 H34 c-2.2,0 -4,-1.8 -4,-4 V28 c0,-2.2 1.8,-4 4,-4 z" />
+        
+    <!-- Document Fold Corner -->
+    <path
+        android:fillColor="#E0E0E0"
+        android:pathData="M62,24 v12 h12 z" />
+
+    <!-- Text Lines on Document -->
+    <path
+        android:fillColor="#0052CC"
+        android:pathData="M38,44 h24 v3.5 H38 z M38,52 h32 v3.5 H38 z M38,60 h28 v3.5 H38 z M38,68 h20 v3.5 H38 z" />
+
+    <!-- Scanner Blue Laser Line -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M24,54 h60 v4 H24 z" />
+
+    <!-- Viewfinder Corner Brackets -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.5"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M24,34 V22 H36 M84,34 V22 H72 M24,74 V86 H36 M84,74 V86 H72" />
+</vector>

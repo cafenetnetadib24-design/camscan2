@@ -1,0 +1,119 @@
+name: Build & Export Release (APK & AAB)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_apk:
+        description: 'ساخت فایل APK خروجی (Release APK)'
+        required: false
+        type: boolean
+        default: true
+      build_aab:
+        description: 'ساخت فایل AAB برای گوگل پلی (App Bundle)'
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    name: ساخت نسخه ریلیز (Release)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Generate Fresh & Valid Gradle Wrapper
+        run: |
+          # Remove any corrupt gradle-wrapper.jar from repository
+          find . -name "gradle-wrapper.jar" -exec rm -f {} +
+          # Regenerate fresh valid wrapper JAR and gradlew
+          gradle wrapper
+          chmod +x ./gradlew
+
+      - name: Setup Release Keystore
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # If secret ANDROID_KEYSTORE_B64 is provided in GitHub Secrets, decode it to my-upload-key.jks
+          if [ -n "$ANDROID_KEYSTORE_B64" ]; then
+            echo "Decoding ANDROID_KEYSTORE_B64 from GitHub Secrets..."
+            echo "$ANDROID_KEYSTORE_B64" | base64 --decode > my-upload-key.jks
+            chmod 600 my-upload-key.jks
+          fi
+
+          # Test if my-upload-key.jks is a valid keystore
+          STORE_PASS="${KEYSTORE_PASSWORD:-android}"
+          if [ -f "my-upload-key.jks" ]; then
+            if ! keytool -list -keystore my-upload-key.jks -storepass "$STORE_PASS" >/dev/null 2>&1; then
+              echo "Warning: my-upload-key.jks is invalid or unreadable! Removing broken keystore..."
+              rm -f my-upload-key.jks
+            fi
+          fi
+
+          # If my-upload-key.jks is not found or was removed, generate a fresh valid upload keystore
+          if [ ! -f "my-upload-key.jks" ]; then
+            echo "Generating new valid upload keystore my-upload-key.jks..."
+            keytool -genkeypair -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Release,O=Android,C=US"
+          fi
+
+      - name: Build Release APK
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_apk == true }}
+        env:
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease --stacktrace
+
+      - name: Build Release AAB (App Bundle)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_aab == true }}
+        env:
+          STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew bundleRelease --stacktrace
+
+      - name: Upload Release APK Artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_apk == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: '**/build/outputs/apk/release/*.apk'
+          if-no-files-found: error
+
+      - name: Upload Release AAB Artifact
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_aab == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: '**/build/outputs/bundle/release/*.aab'
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            **/build/outputs/apk/release/*.apk
+            **/build/outputs/bundle/release/*.aab
+          generate_release_notes: true
