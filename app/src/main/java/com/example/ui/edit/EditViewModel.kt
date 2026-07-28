@@ -148,7 +148,7 @@ class EditViewModel(
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
-            val bounds = com.example.util.DocumentEdgeDetector.detectDocumentBoundaries(originalBitmap)
+            val bounds = com.example.util.DocumentEdgeDetector.detectDocumentBoundariesWithVision(originalBitmap)
             _uiState.value = _uiState.value.copy(
                 cropRect = bounds.rect,
                 topLeft = bounds.topLeft,

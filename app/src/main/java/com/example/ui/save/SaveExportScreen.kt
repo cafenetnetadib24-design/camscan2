@@ -63,6 +63,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import com.example.util.GalleryExporter
@@ -140,6 +141,41 @@ fun SaveExportScreen(
                 .padding(20.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
+                // Return to Document Library Cross (X) Button Row above File Title Card on the Right Side
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.Start,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFFFEF2F2),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
+                        modifier = Modifier.bounceClick { onNavigateHome() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "بازگشت به کتابخانه اسناد",
+                                tint = Color(0xFFDC2626),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "بازگشت به کتابخانه اسناد",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFDC2626)
+                            )
+                        }
+                    }
+                }
+
                 // File Title Card
                 Surface(
                     shape = RoundedCornerShape(20.dp),
@@ -345,21 +381,6 @@ fun SaveExportScreen(
                     Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("ذخیره و بازگشت به کتابخانه اسناد", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 4. Direct Return to Document Library
-                OutlinedButton(
-                    onClick = onNavigateHome,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .bounceClick(),
-                    shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF64748B))
-                ) {
-                    Text("بازگشت به کتابخانه اسناد", color = Color(0xFF334155), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             }
 

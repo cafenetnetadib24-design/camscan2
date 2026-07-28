@@ -67,8 +67,8 @@ class DocumentRepository(
             val origPath = ImageFilterUtils.saveBitmapToAppStorage(context, bitmap, "orig")
             origPaths.add(origPath)
             
-            // Edge detection to identify document boundaries
-            val edgeBounds = com.example.util.DocumentEdgeDetector.detectDocumentBoundaries(bitmap)
+            // ML Kit Vision + Edge detection to identify document boundaries
+            val edgeBounds = com.example.util.DocumentEdgeDetector.detectDocumentBoundariesWithVision(bitmap)
             detectedRects.add(edgeBounds.rect)
 
             // Process filter with edge detection crop bounds

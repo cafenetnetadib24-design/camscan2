@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -58,9 +59,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import com.example.ui.components.bounceClick
+import com.example.util.AdManager
 import com.example.util.AppExpirationUtils
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -122,7 +129,20 @@ fun HomeScreen(
     var folderToEditTarget by remember { mutableStateOf<FolderEntity?>(null) }
     var folderToDeleteTarget by remember { mutableStateOf<FolderEntity?>(null) }
 
-    val isExpired = remember { AppExpirationUtils.isAppExpired() }
+    // Ad Popup Dialog States
+    var showAdDialog by remember { mutableStateOf(true) }
+    var adImageUrl by remember { mutableStateOf(AdManager.DEFAULT_IMAGE_URL) }
+    var adTargetUrl by remember { mutableStateOf("https://github.com/cafenetnetadib24-design/english701") }
+
+    LaunchedEffect(Unit) {
+        val cached = AdManager.getCachedAdInfo(context)
+        adImageUrl = cached.first
+        adTargetUrl = cached.second
+
+        val refreshed = AdManager.refreshAdInfoIfNeeded(context)
+        adImageUrl = refreshed.first
+        adTargetUrl = refreshed.second
+    }
 
     // System share launcher when PDF export is ready
     LaunchedEffect(shareFile) {
@@ -867,67 +887,141 @@ fun HomeScreen(
         )
     }
 
-    if (isExpired) {
-        AlertDialog(
-            onDismissRequest = { /* Non-dismissible */ },
-            shape = RoundedCornerShape(24.dp),
-            containerColor = Color(0xFF1E293B),
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFFEF4444).copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+    // Ad Banner Popup Dialog on HomeScreen Entry
+    if (showAdDialog) {
+        Dialog(
+            onDismissRequest = { showAdDialog = false },
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false
+            )
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                tonalElevation = 8.dp,
+                shadowElevation = 12.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.SystemUpdate,
-                        contentDescription = null,
-                        tint = Color(0xFFEF4444),
-                        modifier = Modifier.size(32.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "نیازمند بروزرسانی نرم‌افزار",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "لطفاً نرم‌افزار اسکنر اسناد را بروز رسانی کنید.",
-                        color = Color(0xFFF8FAFC),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "اعتبار این نسخه از نرم‌افزار در تاریخ ۲۸ مارس ۲۰۲۷ به پایان رسیده است.",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = { },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .bounceClick(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
-                ) {
-                    Text("بروزرسانی نرم‌افزار", color = Color.White, fontWeight = FontWeight.Bold)
+                    // Top Header Row with Title and Close ("X") Icon Button
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFEFF6FF),
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Campaign,
+                                        contentDescription = "تبلیغات",
+                                        tint = Color(0xFF2563EB),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "پیشنهاد ویژه",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Color(0xFF1E293B)
+                            )
+                        }
+
+                        // Close (X) button
+                        IconButton(
+                            onClick = { showAdDialog = false },
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(Color(0xFFF1F5F9), CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "بستن",
+                                tint = Color(0xFF64748B),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Ad Image Banner Container
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color(0xFFF8FAFC))
+                            .clickable {
+                                if (adTargetUrl.isNotEmpty()) {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(adTargetUrl))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "امکان بازکردن لینک وجود ندارد", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = adImageUrl,
+                            contentDescription = "تصویر تبلیغاتی",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Action Buttons Row: Open Link + Close
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (adTargetUrl.isNotEmpty()) {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(adTargetUrl))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "امکان بازکردن لینک وجود ندارد", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .bounceClick(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                        ) {
+                            Text("مشاهده لینک تبلیغ", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { showAdDialog = false },
+                            modifier = Modifier.bounceClick(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("بستن", color = Color(0xFF64748B), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
                 }
             }
-        )
+        }
     }
+
 }

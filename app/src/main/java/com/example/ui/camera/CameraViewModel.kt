@@ -107,7 +107,7 @@ class CameraViewModel(private val repository: DocumentRepository) : ViewModel() 
             imageProxy.close()
 
             if (bitmap != null) {
-                val bounds = DocumentEdgeDetector.detectDocumentBoundaries(bitmap)
+                val bounds = DocumentEdgeDetector.detectDocumentBoundariesWithVision(bitmap)
                 _uiState.value = _uiState.value.copy(
                     pendingCropBitmap = bitmap,
                     cropTopLeft = bounds.topLeft,
@@ -134,27 +134,35 @@ class CameraViewModel(private val repository: DocumentRepository) : ViewModel() 
 
     fun rotatePendingCropBitmap() {
         val current = _uiState.value.pendingCropBitmap ?: return
-        val matrix = Matrix().apply { postRotate(90f) }
-        val rotated = Bitmap.createBitmap(current, 0, 0, current.width, current.height, matrix, true)
-        val bounds = DocumentEdgeDetector.detectDocumentBoundaries(rotated)
-        _uiState.value = _uiState.value.copy(
-            pendingCropBitmap = rotated,
-            cropTopLeft = bounds.topLeft,
-            cropTopRight = bounds.topRight,
-            cropBottomRight = bounds.bottomRight,
-            cropBottomLeft = bounds.bottomLeft
-        )
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            val matrix = Matrix().apply { postRotate(90f) }
+            val rotated = Bitmap.createBitmap(current, 0, 0, current.width, current.height, matrix, true)
+            val bounds = DocumentEdgeDetector.detectDocumentBoundariesWithVision(rotated)
+            _uiState.value = _uiState.value.copy(
+                pendingCropBitmap = rotated,
+                cropTopLeft = bounds.topLeft,
+                cropTopRight = bounds.topRight,
+                cropBottomRight = bounds.bottomRight,
+                cropBottomLeft = bounds.bottomLeft,
+                isProcessing = false
+            )
+        }
     }
 
     fun autoDetectCropQuad() {
         val bitmap = _uiState.value.pendingCropBitmap ?: return
-        val bounds = DocumentEdgeDetector.detectDocumentBoundaries(bitmap)
-        _uiState.value = _uiState.value.copy(
-            cropTopLeft = bounds.topLeft,
-            cropTopRight = bounds.topRight,
-            cropBottomRight = bounds.bottomRight,
-            cropBottomLeft = bounds.bottomLeft
-        )
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+            val bounds = DocumentEdgeDetector.detectDocumentBoundariesWithVision(bitmap)
+            _uiState.value = _uiState.value.copy(
+                cropTopLeft = bounds.topLeft,
+                cropTopRight = bounds.topRight,
+                cropBottomRight = bounds.bottomRight,
+                cropBottomLeft = bounds.bottomLeft,
+                isProcessing = false
+            )
+        }
     }
 
     fun resetCropQuad() {
@@ -247,7 +255,7 @@ class CameraViewModel(private val repository: DocumentRepository) : ViewModel() 
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 if (bitmaps.isNotEmpty()) {
                     val firstBmp = bitmaps.first()
-                    val bounds = DocumentEdgeDetector.detectDocumentBoundaries(firstBmp)
+                    val bounds = DocumentEdgeDetector.detectDocumentBoundariesWithVision(firstBmp)
                     
                     // Add remaining bitmaps if any directly to captured list
                     val remainingBitmaps = bitmaps.drop(1)

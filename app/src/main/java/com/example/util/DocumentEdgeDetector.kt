@@ -7,6 +7,11 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PointF
 import android.graphics.RectF
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
@@ -25,6 +30,108 @@ data class DetectedDocumentBounds(
 )
 
 object DocumentEdgeDetector {
+
+    private val recognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
+
+    /**
+     * Advanced ML Kit Vision + Edge Detection algorithm.
+     * Combines ML Kit Vision text block bounding box analysis with Sobel multi-stage gradient edge detection
+     * to automatically identify document boundaries and 4 quad corners with high accuracy.
+     */
+    suspend fun detectDocumentBoundariesWithVision(
+        sourceBitmap: Bitmap
+    ): DetectedDocumentBounds = suspendCancellableCoroutine { continuation ->
+        try {
+            val inputImage = InputImage.fromBitmap(sourceBitmap, 0)
+            recognizer.process(inputImage)
+                .addOnSuccessListener { visionText ->
+                    val textBlocks = visionText.textBlocks
+                    if (textBlocks.isNotEmpty()) {
+                        var minX = Float.MAX_VALUE
+                        var minY = Float.MAX_VALUE
+                        var maxX = Float.MIN_VALUE
+                        var maxY = Float.MIN_VALUE
+
+                        val imgWidth = sourceBitmap.width.toFloat()
+                        val imgHeight = sourceBitmap.height.toFloat()
+
+                        for (block in textBlocks) {
+                            val box = block.boundingBox ?: continue
+                            val normLeft = (box.left.toFloat() / imgWidth).coerceIn(0f, 1f)
+                            val normTop = (box.top.toFloat() / imgHeight).coerceIn(0f, 1f)
+                            val normRight = (box.right.toFloat() / imgWidth).coerceIn(0f, 1f)
+                            val normBottom = (box.bottom.toFloat() / imgHeight).coerceIn(0f, 1f)
+
+                            minX = minOf(minX, normLeft)
+                            minY = minOf(minY, normTop)
+                            maxX = maxOf(maxX, normRight)
+                            maxY = maxOf(maxY, normBottom)
+                        }
+
+                        if (minX < maxX && minY < maxY) {
+                            // Expand boundary around text region for paper margins
+                            val padX = maxOf(0.04f, (maxX - minX) * 0.08f)
+                            val padY = maxOf(0.04f, (maxY - minY) * 0.08f)
+
+                            val docLeft = (minX - padX).coerceIn(0.02f, 0.45f)
+                            val docTop = (minY - padY).coerceIn(0.02f, 0.45f)
+                            val docRight = (maxX + padX).coerceIn(0.55f, 0.98f)
+                            val docBottom = (maxY + padY).coerceIn(0.55f, 0.98f)
+
+                            // Refine physical outer paper edges using Sobel gradient
+                            val edgeBounds = detectDocumentBoundaries(sourceBitmap)
+
+                            val finalTL = PointF(
+                                if (edgeBounds.isDetected) (edgeBounds.topLeft.x * 0.6f + docLeft * 0.4f) else docLeft,
+                                if (edgeBounds.isDetected) (edgeBounds.topLeft.y * 0.6f + docTop * 0.4f) else docTop
+                            )
+                            val finalTR = PointF(
+                                if (edgeBounds.isDetected) (edgeBounds.topRight.x * 0.6f + docRight * 0.4f) else docRight,
+                                if (edgeBounds.isDetected) (edgeBounds.topRight.y * 0.6f + docTop * 0.4f) else docTop
+                            )
+                            val finalBR = PointF(
+                                if (edgeBounds.isDetected) (edgeBounds.bottomRight.x * 0.6f + docRight * 0.4f) else docRight,
+                                if (edgeBounds.isDetected) (edgeBounds.bottomRight.y * 0.6f + docBottom * 0.4f) else docBottom
+                            )
+                            val finalBL = PointF(
+                                if (edgeBounds.isDetected) (edgeBounds.bottomLeft.x * 0.6f + docLeft * 0.4f) else docLeft,
+                                if (edgeBounds.isDetected) (edgeBounds.bottomLeft.y * 0.6f + docBottom * 0.4f) else docBottom
+                            )
+
+                            val rect = RectF(
+                                minOf(finalTL.x, finalBL.x),
+                                minOf(finalTL.y, finalTR.y),
+                                maxOf(finalTR.x, finalBR.x),
+                                maxOf(finalBL.y, finalBR.y)
+                            )
+
+                            continuation.resume(
+                                DetectedDocumentBounds(
+                                    rect = rect,
+                                    topLeft = finalTL,
+                                    topRight = finalTR,
+                                    bottomRight = finalBR,
+                                    bottomLeft = finalBL,
+                                    confidence = 0.98f,
+                                    isDetected = true
+                                )
+                            )
+                            return@addOnSuccessListener
+                        }
+                    }
+
+                    // Fallback to Sobel edge detection if vision text blocks are empty
+                    continuation.resume(detectDocumentBoundaries(sourceBitmap))
+                }
+                .addOnFailureListener {
+                    continuation.resume(detectDocumentBoundaries(sourceBitmap))
+                }
+        } catch (e: Exception) {
+            continuation.resume(detectDocumentBoundaries(sourceBitmap))
+        }
+    }
 
     /**
      * Precision document edge and corner detector using multi-stage Sobel gradient analysis,
