@@ -53,26 +53,39 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          STORE_PASS="${KEYSTORE_PASSWORD:-android}"
+          ALIAS="${KEY_ALIAS:-upload}"
+          KEY_PASS="${KEY_PASSWORD:-$STORE_PASS}"
+
           # If secret ANDROID_KEYSTORE_B64 is provided in GitHub Secrets, decode it to my-upload-key.jks
           if [ -n "$ANDROID_KEYSTORE_B64" ]; then
             echo "Decoding ANDROID_KEYSTORE_B64 from GitHub Secrets..."
-            echo "$ANDROID_KEYSTORE_B64" | base64 --decode > my-upload-key.jks
+            echo "$ANDROID_KEYSTORE_B64" | tr -d '\r\n ' | base64 --decode > my-upload-key.jks
             chmod 600 my-upload-key.jks
           fi
 
           # Test if my-upload-key.jks is a valid keystore
-          STORE_PASS="${KEYSTORE_PASSWORD:-android}"
           if [ -f "my-upload-key.jks" ]; then
             if ! keytool -list -keystore my-upload-key.jks -storepass "$STORE_PASS" >/dev/null 2>&1; then
-              echo "Warning: my-upload-key.jks is invalid or unreadable! Removing broken keystore..."
-              rm -f my-upload-key.jks
+              echo "Warning: my-upload-key.jks cannot be opened with STORE_PASS ($STORE_PASS). Testing default password 'android'..."
+              if keytool -list -keystore my-upload-key.jks -storepass "android" >/dev/null 2>&1; then
+                echo "Keystore is valid with default password 'android'."
+              else
+                echo "Warning: my-upload-key.jks is corrupted or cannot be unlocked. Removing broken keystore..."
+                rm -f my-upload-key.jks
+              fi
             fi
           fi
 
           # If my-upload-key.jks is not found or was removed, generate a fresh valid upload keystore
           if [ ! -f "my-upload-key.jks" ]; then
-            echo "Generating new valid upload keystore my-upload-key.jks..."
-            keytool -genkeypair -v -keystore my-upload-key.jks -storepass android -alias upload -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Release,O=Android,C=US"
+            echo "Generating new valid upload keystore my-upload-key.jks with matching credentials..."
+            keytool -genkeypair -v -keystore my-upload-key.jks \
+              -storepass "$STORE_PASS" \
+              -alias "$ALIAS" \
+              -keypass "$KEY_PASS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Release,O=Android,C=US"
           fi
 
       - name: Build Release APK
