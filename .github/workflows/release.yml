@@ -81,8 +81,9 @@ jobs:
           STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
         run: |
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Build Release AAB (App Bundle)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_aab == true }}
@@ -90,8 +91,9 @@ jobs:
           STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          JAVA_TOOL_OPTIONS: "-Djava.awt.headless=true"
         run: |
-          ./gradlew bundleRelease --stacktrace
+          ./gradlew bundleRelease --no-daemon --stacktrace
 
       - name: Upload Release APK Artifact
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.build_apk == true }}
