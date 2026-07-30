@@ -43,8 +43,8 @@ fun NavGraph(
             val homeViewModel: HomeViewModel = viewModel(factory = HomeViewModel.Factory(context))
             HomeScreen(
                 viewModel = homeViewModel,
-                onNavigateToCamera = { folderId ->
-                    navController.navigate(ScreenRoutes.CameraScan.createRoute(folderId))
+                onNavigateToCamera = { folderId, isColorScan ->
+                    navController.navigate(ScreenRoutes.CameraScan.createRoute(folderId, isColorScan))
                 },
                 onNavigateToEdit = { docId ->
                     navController.navigate(ScreenRoutes.EditDocument.createRoute(docId))
@@ -62,11 +62,22 @@ fun NavGraph(
                 navArgument("folderId") {
                     type = NavType.LongType
                     defaultValue = -1L
+                },
+                navArgument("isColorScan") {
+                    type = NavType.BoolType
+                    defaultValue = false
                 }
             )
         ) { backStackEntry ->
             val folderIdArg = backStackEntry.arguments?.getLong("folderId")?.takeIf { it > 0 }
+            val isColorScanArg = backStackEntry.arguments?.getBoolean("isColorScan") ?: false
             val cameraViewModel: CameraViewModel = viewModel(factory = CameraViewModel.Factory(context))
+
+            androidx.compose.runtime.LaunchedEffect(folderIdArg, isColorScanArg) {
+                cameraViewModel.setFolderId(folderIdArg)
+                cameraViewModel.setScanMode(isColorScanArg)
+            }
+
             CameraScanScreen(
                 viewModel = cameraViewModel,
                 folderId = folderIdArg,
@@ -94,6 +105,12 @@ fun NavGraph(
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToSaveExport = { documentId ->
                     navController.navigate(ScreenRoutes.SaveExport.createRoute(documentId))
+                },
+                onNavigateToRescan = {
+                    val folderId = editViewModel.uiState.value.document?.folderId
+                    navController.navigate(ScreenRoutes.CameraScan.createRoute(folderId = folderId)) {
+                        popUpTo(ScreenRoutes.Home.route)
+                    }
                 }
             )
         }

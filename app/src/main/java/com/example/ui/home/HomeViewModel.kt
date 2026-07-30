@@ -52,6 +52,12 @@ class HomeViewModel(private val repository: DocumentRepository) : ViewModel() {
 
     val shareFile: StateFlow<File?> = _shareFile
 
+    init {
+        viewModelScope.launch {
+            repository.cleanExpiredTrash()
+        }
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     private val _documents = combine(
         _selectedFolderId,
@@ -62,6 +68,7 @@ class HomeViewModel(private val repository: DocumentRepository) : ViewModel() {
         when {
             query.isNotBlank() -> repository.searchDocuments(query)
             folderId == -1L -> repository.favoriteDocuments
+            folderId == -2L -> repository.trashDocuments
             folderId != null -> repository.getDocumentsInFolder(folderId)
             else -> repository.allDocuments
         }
@@ -165,6 +172,39 @@ class HomeViewModel(private val repository: DocumentRepository) : ViewModel() {
     fun deleteSelectedDocuments() {
         viewModelScope.launch {
             repository.deleteDocuments(_selectedDocIds.value.toList())
+            clearSelection()
+        }
+    }
+
+    fun restoreDocument(documentId: Long) {
+        viewModelScope.launch {
+            repository.restoreFromTrash(documentId)
+        }
+    }
+
+    fun restoreSelectedDocuments() {
+        viewModelScope.launch {
+            repository.restoreMultipleFromTrash(_selectedDocIds.value.toList())
+            clearSelection()
+        }
+    }
+
+    fun permanentlyDeleteDocument(documentId: Long) {
+        viewModelScope.launch {
+            repository.permanentlyDeleteDocument(documentId)
+        }
+    }
+
+    fun permanentlyDeleteSelectedDocuments() {
+        viewModelScope.launch {
+            repository.permanentlyDeleteDocuments(_selectedDocIds.value.toList())
+            clearSelection()
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            repository.emptyTrash()
             clearSelection()
         }
     }

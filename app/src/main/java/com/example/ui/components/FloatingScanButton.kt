@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -44,6 +45,7 @@ import com.example.ui.components.bounceClick
 @Composable
 fun FloatingScanButton(
     onCameraScanClick: () -> Unit,
+    onColorScanClick: () -> Unit = {},
     onGalleryImportClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -95,7 +97,7 @@ fun FloatingScanButton(
                     }
                 }
 
-                // Camera Scan option
+                // Standard Camera Scan option
                 Surface(
                     onClick = {
                         expanded = false

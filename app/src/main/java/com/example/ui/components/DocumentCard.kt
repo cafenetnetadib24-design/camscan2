@@ -1,8 +1,10 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,10 +19,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Checkbox
@@ -56,6 +67,7 @@ import java.util.Locale
 
 import com.example.ui.components.bounceClick
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DocumentCard(
     document: DocumentEntity,
@@ -70,19 +82,38 @@ fun DocumentCard(
     onSharePdf: () -> Unit,
     onSaveToGallery: () -> Unit = {},
     onDelete: () -> Unit,
+    onRestore: (() -> Unit)? = null,
+    onPermanentlyDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val formattedDate = remember(document.updatedAt) {
         SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(document.updatedAt))
     }
+    val daysLeft = remember(document.deletedAt) {
+        if (document.deletedAt != null) {
+            val msInDay = 24 * 60 * 60 * 1000L
+            val elapsed = System.currentTimeMillis() - document.deletedAt
+            maxOf(0L, 30L - (elapsed / msInDay))
+        } else null
+    }
 
     if (isGrid) {
         Surface(
-            onClick = {
-                if (isSelectionMode) onDocumentLongClick() else onDocumentClick()
-            },
-            modifier = modifier.bounceClick(),
+            modifier = modifier
+                .combinedClickable(
+                    onClick = {
+                        if (isSelectionMode) onDocumentLongClick() else onDocumentClick()
+                    },
+                    onLongClick = {
+                        if (isSelectionMode) {
+                            onDocumentLongClick()
+                        } else {
+                            showMenu = true
+                        }
+                    }
+                )
+                .bounceClick(),
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 2.dp,
@@ -194,9 +225,10 @@ fun DocumentCard(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = formattedDate,
+                            text = if (daysLeft != null) "حذف در $daysLeft روز" else formattedDate,
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = if (daysLeft != null) FontWeight.Medium else FontWeight.Normal,
+                            color = if (daysLeft != null) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
@@ -220,7 +252,10 @@ fun DocumentCard(
                             onMoveToFolder = onMoveToFolder,
                             onSharePdf = onSharePdf,
                             onSaveToGallery = onSaveToGallery,
-                            onDelete = onDelete
+                            onSelectMode = onDocumentLongClick,
+                            onDelete = onDelete,
+                            onRestore = onRestore,
+                            onPermanentlyDelete = onPermanentlyDelete
                         )
                     }
                 }
@@ -229,11 +264,20 @@ fun DocumentCard(
     } else {
         // List Layout
         Surface(
-            onClick = {
-                if (isSelectionMode) onDocumentLongClick() else onDocumentClick()
-            },
             modifier = modifier
                 .fillMaxWidth()
+                .combinedClickable(
+                    onClick = {
+                        if (isSelectionMode) onDocumentLongClick() else onDocumentClick()
+                    },
+                    onLongClick = {
+                        if (isSelectionMode) {
+                            onDocumentLongClick()
+                        } else {
+                            showMenu = true
+                        }
+                    }
+                )
                 .bounceClick(),
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -300,20 +344,23 @@ fun DocumentCard(
                     Spacer(modifier = Modifier.height(2.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "$formattedDate  •  ${document.pageCount} صفحه",
+                            text = if (daysLeft != null) "حذف در $daysLeft روز  •  ${document.pageCount} صفحه" else "$formattedDate  •  ${document.pageCount} صفحه",
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            fontWeight = if (daysLeft != null) FontWeight.Medium else FontWeight.Normal,
+                            color = if (daysLeft != null) Color(0xFFEF4444) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                IconButton(onClick = onToggleFavorite) {
-                    Icon(
-                        imageVector = if (document.isFavorite) Icons.Default.Star else Icons.Outlined.StarOutline,
-                        contentDescription = "علاقه‌مندی",
-                        tint = if (document.isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
+                if (document.deletedAt == null) {
+                    IconButton(onClick = onToggleFavorite) {
+                        Icon(
+                            imageVector = if (document.isFavorite) Icons.Default.Star else Icons.Outlined.StarOutline,
+                            contentDescription = "علاقه‌مندی",
+                            tint = if (document.isFavorite) Color(0xFFFFB800) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
 
                 Box {
@@ -332,7 +379,10 @@ fun DocumentCard(
                         onMoveToFolder = onMoveToFolder,
                         onSharePdf = onSharePdf,
                         onSaveToGallery = onSaveToGallery,
-                        onDelete = onDelete
+                        onSelectMode = onDocumentLongClick,
+                        onDelete = onDelete,
+                        onRestore = onRestore,
+                        onPermanentlyDelete = onPermanentlyDelete
                     )
                 }
             }
@@ -348,31 +398,115 @@ fun DocumentCardDropdownMenu(
     onMoveToFolder: () -> Unit,
     onSharePdf: () -> Unit,
     onSaveToGallery: () -> Unit,
-    onDelete: () -> Unit
+    onSelectMode: (() -> Unit)? = null,
+    onDelete: () -> Unit,
+    onRestore: (() -> Unit)? = null,
+    onPermanentlyDelete: (() -> Unit)? = null
 ) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss
     ) {
-        DropdownMenuItem(
-            text = { Text("تغییر نام") },
-            onClick = { onDismiss(); onRename() }
-        )
-        DropdownMenuItem(
-            text = { Text("اشتراک‌گذاری / خروجی PDF") },
-            onClick = { onDismiss(); onSharePdf() }
-        )
-        DropdownMenuItem(
-            text = { Text("ذخیره در گالری (JPG)") },
-            onClick = { onDismiss(); onSaveToGallery() }
-        )
-        DropdownMenuItem(
-            text = { Text("انتقال به پوشه") },
-            onClick = { onDismiss(); onMoveToFolder() }
-        )
-        DropdownMenuItem(
-            text = { Text("حذف", color = MaterialTheme.colorScheme.error) },
-            onClick = { onDismiss(); onDelete() }
-        )
+        if (onRestore != null) {
+            DropdownMenuItem(
+                text = { Text("بازگردانی سند") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Restore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); onRestore() }
+            )
+            DropdownMenuItem(
+                text = { Text("حذف دائمی", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.DeleteForever,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); (onPermanentlyDelete ?: onDelete)() }
+            )
+        } else {
+            DropdownMenuItem(
+                text = { Text("تغییر نام") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); onRename() }
+            )
+            DropdownMenuItem(
+                text = { Text("انتقال به پوشه") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.DriveFileMove,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); onMoveToFolder() }
+            )
+            DropdownMenuItem(
+                text = { Text("اشتراک‌گذاری / خروجی PDF") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); onSharePdf() }
+            )
+            DropdownMenuItem(
+                text = { Text("ذخیره در گالری (JPG)") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); onSaveToGallery() }
+            )
+            onSelectMode?.let { selectAction ->
+                DropdownMenuItem(
+                    text = { Text("انتخاب چندتایی") },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.SelectAll,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    onClick = { onDismiss(); selectAction() }
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("حذف (انتقال به سطل زباله)", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                onClick = { onDismiss(); onDelete() }
+            )
+        }
     }
 }

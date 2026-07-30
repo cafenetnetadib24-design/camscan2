@@ -31,7 +31,8 @@ data class DocumentEntity(
     val pageCount: Int = 1,
     val thumbnailPath: String = "",
     val isFavorite: Boolean = false,
-    val tags: String = "" // Comma-separated tags
+    val tags: String = "", // Comma-separated tags
+    val deletedAt: Long? = null // Timestamp when moved to trash, null if active
 )
 
 @Entity(
@@ -61,5 +62,8 @@ data class DocumentPageEntity(
     val rotationDegrees: Int = 0,
     val brightness: Float = 0f, // -1f to 1f
     val contrast: Float = 1f,   // 0.5f to 2f
+    val saturation: Float = 1f, // 0f to 2f
+    val warmth: Float = 0f,     // -0.5f to 0.5f
+    val sharpness: Float = 1f,  // 0.5f to 2f
     val ocrText: String = ""
 )

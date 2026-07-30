@@ -14,11 +14,36 @@ object AdManager {
     private const val KEY_LAST_FETCH_TIME = "last_fetch_time"
     private const val KEY_CACHED_IMAGE_URL = "cached_image_url"
     private const val KEY_CACHED_TARGET_URL = "cached_target_url"
+    private const val KEY_HAS_SHOWN_FIRST_AD = "has_shown_first_ad"
+    private const val KEY_LAST_AD_SHOWN_TIME = "last_ad_shown_time"
 
     private const val TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000L // 48 hours
+    private const val FOUR_MINUTES_MS = 4 * 60 * 1000L // 4 minutes
 
     const val DEFAULT_IMAGE_URL = "https://raw.githubusercontent.com/cafenetnetadib24-design/english701/main/16.jpg"
     const val DEFAULT_ADS_TXT_URL = "https://raw.githubusercontent.com/cafenetnetadib24-design/english701/main/ads.txt"
+
+    fun shouldShowAd(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val lastShown = prefs.getLong(KEY_LAST_AD_SHOWN_TIME, 0L)
+        val currentTime = System.currentTimeMillis()
+        return (currentTime - lastShown) >= FOUR_MINUTES_MS
+    }
+
+    fun markAdShown(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putLong(KEY_LAST_AD_SHOWN_TIME, System.currentTimeMillis()).apply()
+    }
+
+    fun hasShownFirstAd(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_HAS_SHOWN_FIRST_AD, false)
+    }
+
+    fun markFirstAdShown(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_HAS_SHOWN_FIRST_AD, true).apply()
+    }
 
     private val okHttpClient by lazy {
         OkHttpClient.Builder()

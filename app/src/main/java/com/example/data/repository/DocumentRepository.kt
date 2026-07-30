@@ -14,8 +14,10 @@ import com.example.util.OcrEngine
 import com.example.util.PdfGenerator
 import com.example.util.PdfQuality
 import com.example.util.ScanFilter
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -30,6 +32,7 @@ class DocumentRepository(
     val archivedFolders: Flow<List<FolderEntity>> = folderDao.getArchivedFolders()
     val allFolders: Flow<List<FolderEntity>> = folderDao.getAllFolders()
     val favoriteDocuments: Flow<List<DocumentEntity>> = documentDao.getFavoriteDocuments()
+    val trashDocuments: Flow<List<DocumentEntity>> = documentDao.getTrashDocuments()
 
     fun getDocumentsInFolder(folderId: Long): Flow<List<DocumentEntity>> =
         documentDao.getDocumentsInFolder(folderId)
@@ -57,34 +60,6 @@ class DocumentRepository(
     ): Long = withContext(Dispatchers.IO) {
         if (capturedBitmaps.isEmpty()) return@withContext 0L
 
-        val pagePaths = mutableListOf<String>()
-        val origPaths = mutableListOf<String>()
-        val detectedRects = mutableListOf<android.graphics.RectF>()
-        var firstPageOcrText = ""
-
-        capturedBitmaps.forEachIndexed { idx, bitmap ->
-            // Save raw original image
-            val origPath = ImageFilterUtils.saveBitmapToAppStorage(context, bitmap, "orig")
-            origPaths.add(origPath)
-            
-            // ML Kit Vision + Edge detection to identify document boundaries
-            val edgeBounds = com.example.util.DocumentEdgeDetector.detectDocumentBoundariesWithVision(bitmap)
-            detectedRects.add(edgeBounds.rect)
-
-            // Process filter with edge detection crop bounds
-            val processedBitmap = ImageFilterUtils.applyFilterAndAdjustments(
-                sourceBitmap = bitmap,
-                filter = filter,
-                cropRect = edgeBounds.rect
-            )
-            val procPath = ImageFilterUtils.saveBitmapToAppStorage(context, processedBitmap, "proc")
-            pagePaths.add(procPath)
-
-            if (idx == 0) {
-                firstPageOcrText = OcrEngine.recognizeTextFromBitmap(processedBitmap)
-            }
-        }
-
         val docTitle = if (!title.isNullOrBlank()) {
             title
         } else {
@@ -92,23 +67,42 @@ class DocumentRepository(
             "سند ${sdf.format(java.util.Date())}"
         }
 
-        val thumbnailPath = pagePaths.firstOrNull() ?: ""
+        val pagePaths = mutableListOf<String>()
+        val origPaths = mutableListOf<String>()
+        val fullFrameRect = android.graphics.RectF(0f, 0f, 1f, 1f)
+
+        capturedBitmaps.forEach { bitmap ->
+            val origPath = ImageFilterUtils.saveBitmapToAppStorage(context, bitmap, "orig")
+            origPaths.add(origPath)
+
+            val processedBitmap = ImageFilterUtils.applyFilterAndAdjustments(
+                sourceBitmap = bitmap,
+                filter = filter,
+                cropRect = fullFrameRect,
+                topLeft = android.graphics.PointF(0f, 0f),
+                topRight = android.graphics.PointF(1f, 0f),
+                bottomRight = android.graphics.PointF(1f, 1f),
+                bottomLeft = android.graphics.PointF(0f, 1f)
+            )
+            val procPath = ImageFilterUtils.saveBitmapToAppStorage(context, processedBitmap, "proc")
+            pagePaths.add(procPath)
+        }
+
+        val firstProcPath = pagePaths.firstOrNull() ?: ""
 
         val docEntity = DocumentEntity(
             title = docTitle,
             folderId = folderId,
             pageCount = capturedBitmaps.size,
-            thumbnailPath = thumbnailPath,
+            thumbnailPath = firstProcPath,
             createdAt = System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
 
         val docId = documentDao.insertDocument(docEntity)
 
-        // Insert pages with edge detected bounds
         pagePaths.forEachIndexed { index, path ->
             val origP = origPaths.getOrNull(index) ?: path
-            val rect = detectedRects.getOrElse(index) { android.graphics.RectF(0f, 0f, 1f, 1f) }
             documentDao.insertPage(
                 DocumentPageEntity(
                     documentId = docId,
@@ -116,13 +110,33 @@ class DocumentRepository(
                     imagePath = path,
                     originalImagePath = origP,
                     filterType = filter.name,
-                    cropLeft = rect.left,
-                    cropTop = rect.top,
-                    cropRight = rect.right,
-                    cropBottom = rect.bottom,
-                    ocrText = if (index == 0) firstPageOcrText else ""
+                    cropLeft = 0f,
+                    cropTop = 0f,
+                    cropRight = 1f,
+                    cropBottom = 1f,
+                    ocrText = ""
                 )
             )
+        }
+
+        // Asynchronously run OCR in background without delaying document creation or page rendering
+        kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val firstPage = documentDao.getPagesListForDocument(docId).firstOrNull()
+                if (firstPage != null && java.io.File(firstPage.imagePath).exists()) {
+                    val bmp = BitmapFactory.decodeFile(firstPage.imagePath)
+                    if (bmp != null) {
+                        val ocrText = kotlinx.coroutines.withTimeoutOrNull(2500) {
+                            OcrEngine.recognizeTextFromBitmap(bmp)
+                        } ?: ""
+                        if (ocrText.isNotEmpty()) {
+                            documentDao.updatePage(firstPage.copy(ocrText = ocrText))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
         docId
@@ -135,6 +149,9 @@ class DocumentRepository(
         rotationDegrees: Int,
         brightness: Float,
         contrast: Float,
+        saturation: Float = 1f,
+        warmth: Float = 0f,
+        sharpness: Float = 1f,
         topLeft: android.graphics.PointF = android.graphics.PointF(cropRect.left, cropRect.top),
         topRight: android.graphics.PointF = android.graphics.PointF(cropRect.right, cropRect.top),
         bottomRight: android.graphics.PointF = android.graphics.PointF(cropRect.right, cropRect.bottom),
@@ -149,6 +166,9 @@ class DocumentRepository(
                 filter = filter,
                 brightness = brightness,
                 contrast = contrast,
+                saturation = saturation,
+                warmth = warmth,
+                sharpness = sharpness,
                 rotationDegrees = rotationDegrees,
                 cropRect = cropRect,
                 topLeft = topLeft,
@@ -170,6 +190,9 @@ class DocumentRepository(
                 rotationDegrees = rotationDegrees,
                 brightness = brightness,
                 contrast = contrast,
+                saturation = saturation,
+                warmth = warmth,
+                sharpness = sharpness,
                 ocrText = newOcrText
             )
 
@@ -208,7 +231,23 @@ class DocumentRepository(
         documentDao.moveDocumentsToFolder(docIds, folderId)
     }
 
-    suspend fun deleteDocument(documentId: Long) = withContext(Dispatchers.IO) {
+    suspend fun moveToTrash(documentId: Long) {
+        documentDao.moveToTrash(documentId)
+    }
+
+    suspend fun moveDocumentsToTrash(documentIds: List<Long>) {
+        documentDao.moveMultipleToTrash(documentIds)
+    }
+
+    suspend fun restoreFromTrash(documentId: Long) {
+        documentDao.restoreFromTrash(documentId)
+    }
+
+    suspend fun restoreMultipleFromTrash(documentIds: List<Long>) {
+        documentDao.restoreMultipleFromTrash(documentIds)
+    }
+
+    suspend fun permanentlyDeleteDocument(documentId: Long) = withContext(Dispatchers.IO) {
         val pages = documentDao.getPagesListForDocument(documentId)
         pages.forEach { page ->
             File(page.imagePath).delete()
@@ -217,8 +256,37 @@ class DocumentRepository(
         documentDao.deleteDocumentById(documentId)
     }
 
-    suspend fun deleteDocuments(documentIds: List<Long>) = withContext(Dispatchers.IO) {
-        documentIds.forEach { deleteDocument(it) }
+    suspend fun permanentlyDeleteDocuments(documentIds: List<Long>) = withContext(Dispatchers.IO) {
+        documentIds.forEach { permanentlyDeleteDocument(it) }
+    }
+
+    suspend fun emptyTrash() = withContext(Dispatchers.IO) {
+        val trashDocs = documentDao.getAllTrashDocumentsList()
+        trashDocs.forEach { doc ->
+            val pages = documentDao.getPagesListForDocument(doc.id)
+            pages.forEach { page ->
+                File(page.imagePath).delete()
+                File(page.originalImagePath).delete()
+            }
+        }
+        documentDao.emptyTrash()
+    }
+
+    suspend fun cleanExpiredTrash() = withContext(Dispatchers.IO) {
+        val thirtyDaysInMillis = 30L * 24 * 60 * 60 * 1000L
+        val cutoffTimestamp = System.currentTimeMillis() - thirtyDaysInMillis
+        val expiredDocs = documentDao.getExpiredTrashDocuments(cutoffTimestamp)
+        expiredDocs.forEach { doc ->
+            permanentlyDeleteDocument(doc.id)
+        }
+    }
+
+    suspend fun deleteDocument(documentId: Long) {
+        moveToTrash(documentId)
+    }
+
+    suspend fun deleteDocuments(documentIds: List<Long>) {
+        moveDocumentsToTrash(documentIds)
     }
 
     suspend fun deletePage(pageId: Long, documentId: Long) = withContext(Dispatchers.IO) {
@@ -259,7 +327,8 @@ class DocumentRepository(
         documentId: Long,
         quality: PdfQuality = PdfQuality.HIGH,
         watermarkText: String? = null,
-        addPageNumbers: Boolean = true
+        addPageNumbers: Boolean = true,
+        password: String? = null
     ): File? = withContext(Dispatchers.IO) {
         val doc = documentDao.getDocumentById(documentId) ?: return@withContext null
         val pages = documentDao.getPagesListForDocument(documentId)
@@ -270,7 +339,8 @@ class DocumentRepository(
             pdfTitle = doc.title,
             quality = quality,
             watermarkText = watermarkText,
-            addPageNumbers = addPageNumbers
+            addPageNumbers = addPageNumbers,
+            password = password
         )
     }
 }

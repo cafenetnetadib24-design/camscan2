@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -65,7 +68,13 @@ import java.io.File
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import com.example.util.GalleryExporter
 import com.example.ui.components.bounceClick
 
@@ -89,6 +98,9 @@ fun SaveExportScreen(
     var selectedQuality by remember { mutableStateOf(PdfQuality.HIGH) }
     var watermarkText by remember { mutableStateOf("") }
     var addPageNumbers by remember { mutableStateOf(true) }
+    var isPasswordProtected by remember { mutableStateOf(false) }
+    var pdfPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
     var isExporting by remember { mutableStateOf(false) }
 
     LaunchedEffect(documentId) {
@@ -138,249 +150,395 @@ fun SaveExportScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(20.dp)
         ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Return to Document Library Cross (X) Button Row above File Title Card on the Right Side
-                Row(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .navigationBarsPadding()
+            ) {
+                // Scrollable content area for settings & preferences
+                Column(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp),
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp, vertical = 12.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFFEF2F2),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
-                        modifier = Modifier.bounceClick { onNavigateHome() }
+                    // Return to Document Library Cross (X) Button Row above File Title Card on the Right Side
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFFEF2F2),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA)),
+                            modifier = Modifier.bounceClick { onNavigateHome() }
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "بازگشت به کتابخانه اسناد",
-                                tint = Color(0xFFDC2626),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "بازگشت به کتابخانه اسناد",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFDC2626)
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "بازگشت به کتابخانه اسناد",
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "بازگشت به کتابخانه اسناد",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFDC2626)
+                                )
+                            }
+                        }
+                    }
+
+                    // File Title Card
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.White,
+                        shadowElevation = 2.dp,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("مشخصات فایل", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = title,
+                                onValueChange = { title = it },
+                                label = { Text("نام سند", color = Color.Black, fontWeight = FontWeight.Medium) },
+                                singleLine = true,
+                                isError = title.trim().isEmpty() || isDuplicateTitle,
+                                trailingIcon = {
+                                    if (title.isNotEmpty()) {
+                                        IconButton(onClick = { title = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "پاک کردن نام سند",
+                                                tint = Color(0xFF64748B)
+                                            )
+                                        }
+                                    }
+                                },
+                                supportingText = {
+                                    if (title.trim().isEmpty()) {
+                                        Text("نام سند نباید خالی باشد", color = MaterialTheme.colorScheme.error)
+                                    } else if (isDuplicateTitle) {
+                                        Text("نام سند تکراری است. لطفاً نام دیگری انتخاب کنید", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.Black,
+                                    unfocusedTextColor = Color.Black,
+                                    focusedLabelColor = Color.Black,
+                                    unfocusedLabelColor = Color.Black,
+                                    focusedBorderColor = Color(0xFF2563EB),
+                                    unfocusedBorderColor = Color(0xFF94A3B8),
+                                    errorBorderColor = MaterialTheme.colorScheme.error
+                                ),
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // PDF Quality Options
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.White,
+                        shadowElevation = 2.dp,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.PictureAsPdf,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("کیفیت PDF / فشرده‌سازی", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            QualityOptionRow(
+                                title = "کیفیت بالا (رزولوشن اصلی)",
+                                subtitle = "بهترین کیفیت برای چاپ و بایگانی",
+                                selected = selectedQuality == PdfQuality.HIGH,
+                                onSelect = { selectedQuality = PdfQuality.HIGH }
+                            )
+
+                            QualityOptionRow(
+                                title = "کیفیت متوسط (حجم متعادل)",
+                                subtitle = "مناسب برای اشتراک‌گذاری سریع در پیام‌رسان‌ها",
+                                selected = selectedQuality == PdfQuality.MEDIUM,
+                                onSelect = { selectedQuality = PdfQuality.MEDIUM }
+                            )
+
+                            QualityOptionRow(
+                                title = "کیفیت پایین (فشرده)",
+                                subtitle = "حجم بسیار کم برای ارسال با ایمیل",
+                                selected = selectedQuality == PdfQuality.LOW,
+                                onSelect = { selectedQuality = PdfQuality.LOW }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Password Protection Card
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.White,
+                        shadowElevation = 2.dp,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = Color(0xFF2563EB),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text("رمزگذاری و امنیت PDF", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
+                                }
+                                Switch(
+                                    checked = isPasswordProtected,
+                                    onCheckedChange = { isPasswordProtected = it }
+                                )
+                            }
+
+                            if (isPasswordProtected) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                OutlinedTextField(
+                                    value = pdfPassword,
+                                    onValueChange = { pdfPassword = it },
+                                    label = { Text("رمز عبور فایل PDF", color = Color.Black) },
+                                    singleLine = true,
+                                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                            Icon(
+                                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                                contentDescription = "نمایش رمز عبور"
+                                            )
+                                        }
+                                    },
+                                    supportingText = {
+                                        Text("برای بازکردن فایل PDF نیاز به این رمز عبور خواهد بود", fontSize = 11.sp, color = Color(0xFF64748B))
+                                    },
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.Black,
+                                        unfocusedTextColor = Color.Black,
+                                        focusedLabelColor = Color.Black,
+                                        unfocusedLabelColor = Color.Black,
+                                        focusedBorderColor = Color(0xFF2563EB),
+                                        unfocusedBorderColor = Color(0xFF94A3B8)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
 
-                // File Title Card
+                // Fixed elevated bottom sticky bar for primary action buttons
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     color = Color.White,
-                    shadowElevation = 2.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    modifier = Modifier.fillMaxWidth()
+                    shadowElevation = 10.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
                 ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Description,
-                                contentDescription = null,
-                                tint = Color(0xFF2563EB),
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("مشخصات فایل", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = title,
-                            onValueChange = { title = it },
-                            label = { Text("نام سند", color = Color.Black, fontWeight = FontWeight.Medium) },
-                            singleLine = true,
-                            isError = title.trim().isEmpty() || isDuplicateTitle,
-                            trailingIcon = {
-                                if (title.isNotEmpty()) {
-                                    IconButton(onClick = { title = "" }) {
-                                        Icon(
-                                            imageVector = Icons.Default.Clear,
-                                            contentDescription = "پاک کردن نام سند",
-                                            tint = Color(0xFF64748B)
-                                        )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        // 1. Export and Share PDF
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    if (!validateAndSaveTitle()) return@launch
+                                    if (isPasswordProtected && pdfPassword.trim().isEmpty()) {
+                                        Toast.makeText(context, "لطفاً رمز عبور PDF را وارد کنید", Toast.LENGTH_SHORT).show()
+                                        return@launch
+                                    }
+                                    isExporting = true
+                                    val pdfFile = repository.exportDocumentPdf(
+                                        documentId = documentId,
+                                        quality = selectedQuality,
+                                        password = if (isPasswordProtected) pdfPassword.trim() else null
+                                    )
+                                    isExporting = false
+
+                                    if (pdfFile != null) {
+                                        PdfGenerator.sharePdfFile(context, pdfFile)
+                                    } else {
+                                        Toast.makeText(context, "خطا در تولید PDF", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },
-                            supportingText = {
-                                if (title.trim().isEmpty()) {
-                                    Text("نام سند نباید خالی باشد", color = MaterialTheme.colorScheme.error)
-                                } else if (isDuplicateTitle) {
-                                    Text("نام سند تکراری است. لطفاً نام دیگری انتخاب کنید", color = MaterialTheme.colorScheme.error)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .bounceClick(),
+                            enabled = !isExporting,
+                            shape = RoundedCornerShape(14.dp)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("خروجی و اشتراک‌گذاری PDF", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 2. Direct Save Images to Gallery (JPG)
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    if (!validateAndSaveTitle()) return@launch
+                                    isExporting = true
+                                    val pages = repository.getPagesListForDocument(documentId)
+                                    val paths = pages.map { it.imagePath }
+                                    val count = GalleryExporter.saveImagePathsToGallery(
+                                        context = context,
+                                        imagePaths = paths,
+                                        baseName = title.trim()
+                                    )
+                                    isExporting = false
+                                    if (count > 0) {
+                                        Toast.makeText(
+                                            context,
+                                            "با موفقیت $count تصویر در گالری ذخیره شد (آلبوم DocScanner)",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(context, "خطا در ذخیره‌سازی تصاویر در گالری", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.Black,
-                                unfocusedTextColor = Color.Black,
-                                focusedLabelColor = Color.Black,
-                                unfocusedLabelColor = Color.Black,
-                                focusedBorderColor = Color(0xFF2563EB),
-                                unfocusedBorderColor = Color(0xFF94A3B8),
-                                errorBorderColor = MaterialTheme.colorScheme.error
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .bounceClick(),
+                            enabled = !isExporting,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF059669)
+                            )
+                        ) {
+                            Icon(Icons.Default.Image, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("ذخیره مستقیم تصویر در گالری (JPG)", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 3. Direct Save PDF File to Phone Storage (Yellow Button)
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    if (!validateAndSaveTitle()) return@launch
+                                    if (isPasswordProtected && pdfPassword.trim().isEmpty()) {
+                                        Toast.makeText(context, "لطفاً رمز عبور PDF را وارد کنید", Toast.LENGTH_SHORT).show()
+                                        return@launch
+                                    }
+                                    isExporting = true
+                                    val pdfFile = repository.exportDocumentPdf(
+                                        documentId = documentId,
+                                        quality = selectedQuality,
+                                        password = if (isPasswordProtected) pdfPassword.trim() else null
+                                    )
+                                    isExporting = false
+
+                                    if (pdfFile != null) {
+                                        val success = PdfGenerator.savePdfToDeviceStorage(context, pdfFile, title)
+                                        if (success) {
+                                            Toast.makeText(
+                                                context,
+                                                "فایل PDF با موفقیت در پوشه Downloads/DocScanner گوشی ذخیره شد",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(context, "خطا در ذخیره‌سازی فایل PDF در گوشی", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "خطا در تولید PDF", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .bounceClick(),
+                            enabled = !isExporting,
+                            shape = RoundedCornerShape(14.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFEAB308)
+                            )
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = Color(0xFF1E293B), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("ذخیره مستقیم فایل PDF در گوشی", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF1E293B))
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // 3. Save & Return to Document Library
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    if (validateAndSaveTitle()) {
+                                        Toast.makeText(context, "سند با موفقیت در کتابخانه ذخیره شد", Toast.LENGTH_SHORT).show()
+                                        onNavigateHome()
+                                    }
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .bounceClick(),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFF97316)
+                            )
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("ذخیره و بازگشت به کتابخانه اسناد", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
                     }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // PDF Quality Options
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = Color.White,
-                    shadowElevation = 2.dp,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(18.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.PictureAsPdf,
-                                contentDescription = null,
-                                tint = Color(0xFF2563EB),
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("کیفیت PDF / فشرده‌سازی", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color.Black)
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        QualityOptionRow(
-                            title = "کیفیت بالا (رزولوشن اصلی)",
-                            subtitle = "بهترین کیفیت برای چاپ و بایگانی",
-                            selected = selectedQuality == PdfQuality.HIGH,
-                            onSelect = { selectedQuality = PdfQuality.HIGH }
-                        )
-
-                        QualityOptionRow(
-                            title = "کیفیت متوسط (حجم متعادل)",
-                            subtitle = "مناسب برای اشتراک‌گذاری سریع در پیام‌رسان‌ها",
-                            selected = selectedQuality == PdfQuality.MEDIUM,
-                            onSelect = { selectedQuality = PdfQuality.MEDIUM }
-                        )
-
-                        QualityOptionRow(
-                            title = "کیفیت پایین (فشرده)",
-                            subtitle = "حجم بسیار کم برای ارسال با ایمیل",
-                            selected = selectedQuality == PdfQuality.LOW,
-                            onSelect = { selectedQuality = PdfQuality.LOW }
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Primary Action Buttons
-                // 1. Export and Share PDF
-                Button(
-                    onClick = {
-                        scope.launch {
-                            if (!validateAndSaveTitle()) return@launch
-                            isExporting = true
-                            val pdfFile = repository.exportDocumentPdf(
-                                documentId = documentId,
-                                quality = selectedQuality
-                            )
-                            isExporting = false
-
-                            if (pdfFile != null) {
-                                PdfGenerator.sharePdfFile(context, pdfFile)
-                            } else {
-                                Toast.makeText(context, "خطا در تولید PDF", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .bounceClick(),
-                    enabled = !isExporting,
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Default.Share, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("خروجی و اشتراک‌گذاری PDF", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 2. Direct Save Images to Gallery (JPG)
-                Button(
-                    onClick = {
-                        scope.launch {
-                            if (!validateAndSaveTitle()) return@launch
-                            isExporting = true
-                            val pages = repository.getPagesListForDocument(documentId)
-                            val paths = pages.map { it.imagePath }
-                            val count = GalleryExporter.saveImagePathsToGallery(
-                                context = context,
-                                imagePaths = paths,
-                                baseName = title.trim()
-                            )
-                            isExporting = false
-                            if (count > 0) {
-                                Toast.makeText(
-                                    context,
-                                    "با موفقیت $count تصویر در گالری ذخیره شد (آلبوم DocScanner)",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } else {
-                                Toast.makeText(context, "خطا در ذخیره‌سازی تصاویر در گالری", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .bounceClick(),
-                    enabled = !isExporting,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF059669)
-                    )
-                ) {
-                    Icon(Icons.Default.Image, contentDescription = null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("ذخیره مستقیم تصویر در گالری (JPG)", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 3. Save & Return to Document Library
-                Button(
-                    onClick = {
-                        scope.launch {
-                            if (validateAndSaveTitle()) {
-                                Toast.makeText(context, "سند با موفقیت در کتابخانه ذخیره شد", Toast.LENGTH_SHORT).show()
-                                onNavigateHome()
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .bounceClick(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFF97316)
-                    )
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("ذخیره و بازگشت به کتابخانه اسناد", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             }
 

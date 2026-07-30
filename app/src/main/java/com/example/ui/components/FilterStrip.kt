@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.FilterBAndW
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InvertColors
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -89,6 +90,12 @@ fun FilterStrip(
     )
 
     val filterOptions = listOf(
+        FilterOption(
+            filter = ScanFilter.DESKTOP_COLOR,
+            title = "اسکنر رنگی رومیزی",
+            icon = Icons.Default.Palette,
+            colorFilter = ColorFilter.colorMatrix(magicColorMatrix)
+        ),
         FilterOption(
             filter = ScanFilter.MAGIC_COLOR,
             title = "رنگی جادویی",

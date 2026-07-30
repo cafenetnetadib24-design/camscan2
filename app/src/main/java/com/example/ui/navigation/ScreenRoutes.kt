@@ -3,9 +3,9 @@ package com.example.ui.navigation
 sealed class ScreenRoutes(val route: String) {
     object Splash : ScreenRoutes("splash")
     object Home : ScreenRoutes("home")
-    object CameraScan : ScreenRoutes("camera_scan?folderId={folderId}") {
-        fun createRoute(folderId: Long? = null) =
-            if (folderId != null && folderId > 0) "camera_scan?folderId=$folderId" else "camera_scan"
+    object CameraScan : ScreenRoutes("camera_scan?folderId={folderId}&isColorScan={isColorScan}") {
+        fun createRoute(folderId: Long? = null, isColorScan: Boolean = false) =
+            "camera_scan?folderId=${folderId ?: -1L}&isColorScan=$isColorScan"
     }
     
     object EditDocument : ScreenRoutes("edit_document/{documentId}/{pageIndex}") {

@@ -17,8 +17,12 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +51,7 @@ import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.Highlight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.foundation.lazy.LazyRow
@@ -100,6 +105,10 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.launch
+
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun CameraScanScreen(
@@ -144,6 +153,17 @@ fun CameraScanScreen(
         }
     }
 
+    DisposableEffect(lifecycleOwner) {
+        onDispose {
+            try {
+                val cameraProvider = ProcessCameraProvider.getInstance(context).get()
+                cameraProvider.unbindAll()
+            } catch (e: Exception) {
+                Log.e("CameraScanScreen", "Error unbinding camera on dispose", e)
+            }
+        }
+    }
+
     LaunchedEffect(uiState.flashMode, imageCapture, cameraInstance) {
         val capture = imageCapture ?: return@LaunchedEffect
         when (uiState.flashMode) {
@@ -166,16 +186,60 @@ fun CameraScanScreen(
         }
     }
 
+    // Capture & Fly-to-Thumbnail Animation States
+    val coroutineScope = rememberCoroutineScope()
+    var currentPreviewView by remember { mutableStateOf<PreviewView?>(null) }
+    var shutterFlashVisible by remember { mutableStateOf(false) }
+    var flyingBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val flyAnimProgress = remember { androidx.compose.animation.core.Animatable(0f) }
+    var thumbnailOffsetInRoot by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+    var thumbnailSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var rootContainerSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    var previousCapturedCount by remember { mutableStateOf(uiState.capturedBitmaps.size) }
+
+    LaunchedEffect(shutterFlashVisible) {
+        if (shutterFlashVisible) {
+            kotlinx.coroutines.delay(80)
+            shutterFlashVisible = false
+        }
+    }
+
+    LaunchedEffect(uiState.capturedBitmaps.size) {
+        val currentSize = uiState.capturedBitmaps.size
+        if (currentSize > previousCapturedCount && uiState.capturedBitmaps.isNotEmpty()) {
+            if (flyingBitmap == null) {
+                val newBitmap = uiState.capturedBitmaps.last()
+                flyingBitmap = newBitmap
+                flyAnimProgress.snapTo(0f)
+                flyAnimProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = 650,
+                        easing = androidx.compose.animation.core.LinearEasing
+                    )
+                )
+                flyingBitmap = null
+            }
+        }
+        previousCapturedCount = currentSize
+    }
+
     ScaffoldCameraContainer(
         hasPermission = cameraPermissionState.status.isGranted,
         onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
         onNavigateBack = onNavigateBack
     ) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .onGloballyPositioned { coords -> rootContainerSize = coords.size }
+        ) {
             // Camera Preview View
             AndroidView(
                 factory = { ctx ->
                     val previewView = PreviewView(ctx)
+                    currentPreviewView = previewView
                     val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
 
                     cameraProviderFuture.addListener({
@@ -238,9 +302,11 @@ fun CameraScanScreen(
                 flashMode = uiState.flashMode,
                 isAutoCapture = uiState.isAutoCapture,
                 isMultiPage = uiState.isMultiPage,
+                isColorScan = uiState.isColorScan,
                 onToggleFlash = { viewModel.toggleFlashMode() },
                 onToggleAuto = { viewModel.toggleAutoCapture() },
                 onToggleMultiPage = { viewModel.toggleMultiPage() },
+                onToggleColorScan = { viewModel.setScanMode(!uiState.isColorScan) },
                 onClose = onNavigateBack,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -252,6 +318,11 @@ fun CameraScanScreen(
                 capturedCount = uiState.capturedBitmaps.size,
                 lastBitmap = uiState.capturedBitmaps.lastOrNull(),
                 isProcessing = uiState.isProcessing,
+                flyProgress = flyAnimProgress.value,
+                onThumbnailPositioned = { pos, size ->
+                    thumbnailOffsetInRoot = pos
+                    thumbnailSize = size
+                },
                 onThumbnailClick = {
                     if (uiState.capturedBitmaps.isNotEmpty()) {
                         viewModel.togglePagePreviewTray(true)
@@ -259,16 +330,25 @@ fun CameraScanScreen(
                 },
                 onCaptureClick = {
                     val capture = imageCapture ?: return@BottomShutterBar
+                    shutterFlashVisible = true
+
                     when (uiState.flashMode) {
                         FlashMode.ON -> capture.flashMode = ImageCapture.FLASH_MODE_ON
                         FlashMode.OFF -> capture.flashMode = ImageCapture.FLASH_MODE_OFF
                         FlashMode.AUTO -> capture.flashMode = ImageCapture.FLASH_MODE_AUTO
                         FlashMode.TORCH -> capture.flashMode = ImageCapture.FLASH_MODE_OFF
                     }
+
                     capture.takePicture(
                         ContextCompat.getMainExecutor(context),
                         object : ImageCapture.OnImageCapturedCallback() {
                             override fun onCaptureSuccess(image: ImageProxy) {
+                                try {
+                                    cameraInstance?.cameraControl?.enableTorch(false)
+                                } catch (e: Exception) {
+                                    Log.e("CameraScanScreen", "Failed to turn off torch", e)
+                                }
+                                viewModel.turnOffFlash()
                                 viewModel.addCapturedImage(image)
                             }
 
@@ -290,6 +370,91 @@ fun CameraScanScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 36.dp, start = 20.dp, end = 20.dp)
             )
+
+            // Camera Shutter Flash Overlay Effect
+            AnimatedVisibility(
+                visible = shutterFlashVisible,
+                enter = fadeIn(animationSpec = tween(40)),
+                exit = fadeOut(animationSpec = tween(90))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.7f))
+                )
+            }
+
+            // Flying Thumbnail Animation Overlay (Pops larger than laser frame, then glides into corner square)
+            flyingBitmap?.let { bmp ->
+                val progress = flyAnimProgress.value
+                val startX = rootContainerSize.width / 2f
+                val startY = rootContainerSize.height * 0.40f
+
+                val targetX = if (thumbnailOffsetInRoot.x > 0f) {
+                    thumbnailOffsetInRoot.x + thumbnailSize.width / 2f
+                } else {
+                    rootContainerSize.width - 80f
+                }
+                val targetY = if (thumbnailOffsetInRoot.y > 0f) {
+                    thumbnailOffsetInRoot.y + thumbnailSize.height / 2f
+                } else {
+                    rootContainerSize.height - 100f
+                }
+
+                val popThreshold = 0.22f
+                val currentX: Float
+                val currentY: Float
+                val currentScale: Float
+                val currentRotation: Float
+
+                if (progress <= popThreshold) {
+                    val popFactor = progress / popThreshold
+                    // Expands larger than laser frame (up to 1.25x scale)
+                    currentScale = 0.95f + 0.30f * popFactor
+                    currentX = startX
+                    currentY = startY - 15f * popFactor
+                    currentRotation = -2f * popFactor
+                } else {
+                    val flightP = (progress - popThreshold) / (1.0f - popThreshold)
+                    val easedFlight = androidx.compose.animation.core.FastOutSlowInEasing.transform(flightP)
+
+                    currentX = startX + (targetX - startX) * easedFlight
+                    currentY = (startY - 15f) + (targetY - (startY - 15f)) * easedFlight
+                    // Shrinks smoothly from 1.25x down to 0.18x into corner square
+                    currentScale = 1.25f - 1.07f * easedFlight
+                    currentRotation = -2f - 16f * easedFlight
+                }
+
+                val currentAlpha = if (progress > 0.92f) (1f - (progress - 0.92f) / 0.08f) else 1.0f
+
+                Box(
+                    modifier = Modifier
+                        .graphicsLayer {
+                            translationX = currentX - (rootContainerSize.width / 2f)
+                            translationY = currentY - (rootContainerSize.height / 2f)
+                            scaleX = currentScale
+                            scaleY = currentScale
+                            rotationZ = currentRotation
+                            alpha = currentAlpha
+                        }
+                        .size(width = 240.dp, height = 320.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(Color(0xFF0F172A))
+                        .border(
+                            width = if (progress <= popThreshold) 4.dp else 2.dp,
+                            color = if (progress <= popThreshold) Color(0xFF10B981) else Color.White,
+                            shape = RoundedCornerShape(22.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
 
             // Continuous Capture Toast Message Overlay
             AnimatedVisibility(
@@ -515,72 +680,150 @@ fun TopCameraToolbar(
     flashMode: FlashMode,
     isAutoCapture: Boolean,
     isMultiPage: Boolean,
+    isColorScan: Boolean,
     onToggleFlash: () -> Unit,
     onToggleAuto: () -> Unit,
     onToggleMultiPage: () -> Unit,
+    onToggleColorScan: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Color(0x66000000), CircleShape)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        IconButton(onClick = onClose) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
-        }
-
-        // Flash Toggle
-        IconButton(onClick = onToggleFlash) {
-            Icon(
-                imageVector = when (flashMode) {
-                    FlashMode.OFF -> Icons.Default.FlashOff
-                    FlashMode.ON -> Icons.Default.FlashOn
-                    FlashMode.TORCH -> Icons.Default.Highlight
-                    FlashMode.AUTO -> Icons.Default.FlashAuto
-                },
-                contentDescription = "Flash",
-                tint = if (flashMode != FlashMode.OFF) Color(0xFF00E5FF) else Color.White
-            )
-        }
-
-        // Auto Capture Toggle
-        Surface(
-            onClick = onToggleAuto,
-            shape = CircleShape,
-            color = if (isAutoCapture) Color(0xFF0052CC) else Color.Transparent
+        // Top Navigation & Flash Row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Surface(
+                onClick = onClose,
+                shape = CircleShape,
+                color = Color(0x990F172A),
+                modifier = Modifier.size(44.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "بازگشت", tint = Color.White)
+                }
+            }
+
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0x990F172A),
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                Text(
+                    text = "اسکنر اسناد",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("خودکار", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Surface(
+                onClick = onToggleFlash,
+                shape = CircleShape,
+                color = Color(0x990F172A),
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = when (flashMode) {
+                            FlashMode.OFF -> Icons.Default.FlashOff
+                            FlashMode.ON -> Icons.Default.FlashOn
+                            FlashMode.TORCH -> Icons.Default.Highlight
+                            FlashMode.AUTO -> Icons.Default.FlashAuto
+                        },
+                        contentDescription = "فلاش",
+                        tint = if (flashMode != FlashMode.OFF) Color(0xFF00E5FF) else Color.White
+                    )
+                }
             }
         }
 
-        // Multi-page vs Single Mode
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Mode Selector Chips Bar
         Surface(
-            onClick = onToggleMultiPage,
-            shape = CircleShape,
-            color = if (isMultiPage) Color(0xFF00A86B) else Color.Transparent
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xBB0F172A),
+            shadowElevation = 6.dp
         ) {
-            Text(
-                text = if (isMultiPage) "چند صفحه‌ای" else "تک صفحه‌ای",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Color Scan Toggle Chip
+                Surface(
+                    onClick = onToggleColorScan,
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (isColorScan) Color(0xFFE11D48) else Color(0x22FFFFFF)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Palette,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isColorScan) "تصویر رنگی" else "اسناد B/W",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Auto Capture Toggle Chip
+                Surface(
+                    onClick = onToggleAuto,
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (isAutoCapture) Color(0xFF2563EB) else Color(0x22FFFFFF)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isAutoCapture) "خودکار" else "دستی",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Multi-page Toggle Chip
+                Surface(
+                    onClick = onToggleMultiPage,
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (isMultiPage) Color(0xFF059669) else Color(0x22FFFFFF)
+                ) {
+                    Text(
+                        text = if (isMultiPage) "چند صفحه‌ای" else "تک صفحه‌ای",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -590,107 +833,128 @@ fun BottomShutterBar(
     capturedCount: Int,
     lastBitmap: android.graphics.Bitmap?,
     isProcessing: Boolean,
+    flyProgress: Float = 0f,
+    onThumbnailPositioned: (androidx.compose.ui.geometry.Offset, androidx.compose.ui.unit.IntSize) -> Unit = { _, _ -> },
     onThumbnailClick: () -> Unit,
     onCaptureClick: () -> Unit,
     onProceedClick: () -> Unit,
     onGalleryClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    val thumbnailBounceScale = if (flyProgress in 0.75f..1.0f) {
+        1f + 0.28f * kotlin.math.sin((flyProgress - 0.75f) / 0.25f * kotlin.math.PI.toFloat())
+    } else 1f
+
+    Surface(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+        shape = RoundedCornerShape(32.dp),
+        color = Color(0xCC0F172A),
+        shadowElevation = 8.dp
     ) {
-        // Thumbnail Stack Badge
-        Box(
+        Row(
             modifier = Modifier
-                .size(60.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0x88000000))
-                .border(2.dp, Color.White, RoundedCornerShape(12.dp))
-                .bounceClick { if (capturedCount > 0) onThumbnailClick() },
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (lastBitmap != null) {
-                Image(
-                    bitmap = lastBitmap.asImageBitmap(),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+            // Thumbnail Stack Badge
+            Box(
+                modifier = Modifier
+                    .onGloballyPositioned { coords ->
+                        onThumbnailPositioned(coords.positionInRoot(), coords.size)
+                    }
+                    .graphicsLayer {
+                        scaleX = thumbnailBounceScale
+                        scaleY = thumbnailBounceScale
+                    }
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0x66000000))
+                    .border(2.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(14.dp))
+                    .bounceClick { if (capturedCount > 0) onThumbnailClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                if (lastBitmap != null) {
+                    Image(
+                        bitmap = lastBitmap.asImageBitmap(),
+                        contentDescription = "پیش‌نمایش",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .background(Color(0xFF2563EB), CircleShape)
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "$capturedCount",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    Text("0", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            // Center Big Shutter Button
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .padding(5.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF2563EB))
+                    .bounceClick { if (!isProcessing) onCaptureClick() },
+                contentAlignment = Alignment.Center
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .background(Color(0xFF0052CC), CircleShape)
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                        .size(52.dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                )
+            }
+
+            // Proceed or Gallery Import Button
+            if (capturedCount > 0) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF059669))
+                        .bounceClick { if (!isProcessing) onProceedClick() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "$capturedCount",
-                        color = Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
+                    Icon(
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "تایید اسکن",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             } else {
-                Text("0", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        // Center Big Shutter Button
-        Box(
-            modifier = Modifier
-                .size(76.dp)
-                .clip(CircleShape)
-                .background(Color.White)
-                .padding(6.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF0052CC))
-                .bounceClick { if (!isProcessing) onCaptureClick() },
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-            )
-        }
-
-        // Proceed or Gallery Import Button
-        if (capturedCount > 0) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF00A86B))
-                    .bounceClick { if (!isProcessing) onProceedClick() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = "Done",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp)
-                )
-            }
-        } else {
-            // Import from Gallery Button
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xAA1E293B))
-                    .bounceClick { if (!isProcessing) onGalleryClick() },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        imageVector = Icons.Default.Collections,
-                        contentDescription = "Import from Gallery",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text("گالری", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x44FFFFFF))
+                        .bounceClick { if (!isProcessing) onGalleryClick() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Collections,
+                            contentDescription = "انتخاب از گالری",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Text("گالری", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

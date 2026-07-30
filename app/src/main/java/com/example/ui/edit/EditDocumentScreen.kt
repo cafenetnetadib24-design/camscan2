@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import com.example.ui.components.bounceClick
 import androidx.compose.foundation.layout.padding
@@ -37,6 +38,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RotateLeft
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Save
@@ -44,7 +49,10 @@ import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +60,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -79,6 +88,18 @@ import com.example.ui.components.FilterStrip
 import com.example.ui.components.InteractiveCropView
 import java.io.File
 
+import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Contrast
+import androidx.compose.material.icons.filled.HighQuality
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.vector.ImageVector
+
 enum class EditTab {
     CROP_ROTATE, FILTERS, ADJUSTMENTS
 }
@@ -88,21 +109,27 @@ enum class EditTab {
 fun EditDocumentScreen(
     viewModel: EditViewModel,
     onNavigateBack: () -> Unit,
-    onNavigateToSaveExport: (documentId: Long) -> Unit
+    onNavigateToSaveExport: (documentId: Long) -> Unit,
+    onNavigateToRescan: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     // Default tab set to FILTERS so user sees the processed document preview first
     var activeTab by remember { mutableStateOf(EditTab.FILTERS) }
+    var showOptionsMenu by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showMoveFolderDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     val currentPage = uiState.pages.getOrNull(uiState.currentPageIndex)
-    val currentBitmap = remember(currentPage?.imagePath) {
-        currentPage?.let { page ->
-            if (File(page.imagePath).exists()) {
-                BitmapFactory.decodeFile(page.imagePath)
-            } else null
-        }
+    val currentBitmap = remember(currentPage?.imagePath, uiState.document?.thumbnailPath) {
+        val path = currentPage?.imagePath
+            ?: uiState.document?.thumbnailPath?.takeIf { File(it).exists() }
+            ?: ""
+        if (path.isNotEmpty() && File(path).exists()) {
+            BitmapFactory.decodeFile(path)
+        } else null
     }
 
     val originalBitmap = remember(currentPage?.originalImagePath, currentPage?.imagePath) {
@@ -129,17 +156,46 @@ fun EditDocumentScreen(
         }
     }
 
+    val adjustmentColorMatrix = remember(
+        uiState.brightness,
+        uiState.contrast,
+        uiState.saturation,
+        uiState.warmth,
+        uiState.sharpness
+    ) {
+        val androidCm = com.example.util.ImageFilterUtils.createAdjustmentColorMatrix(
+            contrast = uiState.contrast,
+            brightness = uiState.brightness,
+            saturation = uiState.saturation,
+            warmth = uiState.warmth,
+            sharpness = uiState.sharpness
+        )
+        ColorMatrix(androidCm.array)
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
-                        Text(
-                            text = uiState.document?.title ?: "ویرایش سند",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1
-                        )
+                    Column(
+                        modifier = Modifier.clickable { showRenameDialog = true }
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = uiState.document?.title ?: "ویرایش سند",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "تغییر نام",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                         Text(
                             text = "صفحه ${uiState.currentPageIndex + 1} از ${uiState.pages.size}",
                             fontSize = 12.sp,
@@ -159,6 +215,30 @@ fun EditDocumentScreen(
                     }
                 },
                 actions = {
+                    // Back to Image Scan Button
+                    FilledTonalButton(
+                        onClick = { onNavigateToRescan() },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(end = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CameraAlt,
+                            contentDescription = "بازگشت به اسکن",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "اسکن مجدد",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
                     // Save / Export PDF
                     IconButton(onClick = {
                         viewModel.applyCropAndSave {
@@ -170,6 +250,81 @@ fun EditDocumentScreen(
                             contentDescription = "ذخیره / خروجی",
                             tint = MaterialTheme.colorScheme.primary
                         )
+                    }
+
+                    Box {
+                        IconButton(onClick = { showOptionsMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "منو گزینه‌ها"
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showOptionsMenu,
+                            onDismissRequest = { showOptionsMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("بازگشت به اسکن / افزودن تصویر") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    onNavigateToRescan()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("تغییر نام سند") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    showRenameDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("انتقال به پوشه") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.DriveFileMove,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    showMoveFolderDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("انتقال به سطل زباله", color = MaterialTheme.colorScheme.error) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                onClick = {
+                                    showOptionsMenu = false
+                                    showDeleteConfirmDialog = true
+                                }
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -310,32 +465,10 @@ fun EditDocumentScreen(
                     }
 
                     EditTab.ADJUSTMENTS -> {
-                        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("روشنایی", fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                                Slider(
-                                    value = uiState.brightness,
-                                    onValueChange = { viewModel.updateBrightnessContrast(it, uiState.contrast) },
-                                    valueRange = -0.5f..0.5f,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("کنتراست", fontSize = 12.sp, modifier = Modifier.width(80.dp))
-                                Slider(
-                                    value = uiState.contrast,
-                                    onValueChange = { viewModel.updateBrightnessContrast(uiState.brightness, it) },
-                                    valueRange = 0.5f..2.0f,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                        }
+                        ColorAdjustmentsPanel(
+                            uiState = uiState,
+                            viewModel = viewModel
+                        )
                     }
                 }
 
@@ -382,7 +515,18 @@ fun EditDocumentScreen(
                 .background(Color(0xFF0F172A)),
             contentAlignment = Alignment.Center
         ) {
-            if (activeTab == EditTab.CROP_ROTATE) {
+            if (uiState.pages.isEmpty() && currentBitmap == null) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = Color(0xFF2563EB), modifier = Modifier.size(44.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "در حال ذخیره و پردازش سند...",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            } else if (activeTab == EditTab.CROP_ROTATE) {
                 rotatedOriginalBitmap?.let { bitmap ->
                     InteractiveCropView(
                         bitmap = bitmap,
@@ -401,33 +545,59 @@ fun EditDocumentScreen(
                         Image(
                             bitmap = bitmap.asImageBitmap(),
                             contentDescription = "Document Preview",
+                            colorFilter = ColorFilter.colorMatrix(adjustmentColorMatrix),
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(16.dp),
                             contentScale = ContentScale.Fit
                         )
 
-                        // Floating button to edit crop boundaries quickly
-                        Surface(
-                            onClick = { activeTab = EditTab.CROP_ROTATE },
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color(0xCC1E293B),
+                        // Floating action buttons overlay
+                        Row(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .padding(16.dp)
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Surface(
+                                onClick = { onNavigateToRescan() },
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color(0xEE2563EB),
+                                modifier = Modifier.bounceClick()
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Crop,
-                                    contentDescription = "تنظیم برش",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("تنظیم برش", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CameraAlt,
+                                        contentDescription = "بازگشت به اسکن",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("بازگشت به اسکن", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+
+                            Surface(
+                                onClick = { activeTab = EditTab.CROP_ROTATE },
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color(0xCC1E293B)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Crop,
+                                        contentDescription = "تنظیم برش",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("تنظیم برش", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
@@ -448,6 +618,256 @@ fun EditDocumentScreen(
                     }
                 }
             }
+
+            // Rename Document Dialog
+            if (showRenameDialog) {
+                var newTitle by remember { mutableStateOf(uiState.document?.title ?: "") }
+                AlertDialog(
+                    onDismissRequest = { showRenameDialog = false },
+                    title = { Text("تغییر نام سند", fontWeight = FontWeight.Bold) },
+                    text = {
+                        OutlinedTextField(
+                            value = newTitle,
+                            onValueChange = { newTitle = it },
+                            label = { Text("نام جدید سند") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (newTitle.isNotBlank()) {
+                                    viewModel.renameDocument(newTitle.trim())
+                                    showRenameDialog = false
+                                }
+                            }
+                        ) {
+                            Text("ثبت نام جدید")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRenameDialog = false }) {
+                            Text("انصراف")
+                        }
+                    }
+                )
+            }
+
+            // Move to Folder Dialog
+            if (showMoveFolderDialog) {
+                AlertDialog(
+                    onDismissRequest = { showMoveFolderDialog = false },
+                    title = { Text("انتقال به پوشه", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column {
+                            TextButton(
+                                onClick = {
+                                    viewModel.moveDocumentToFolder(null)
+                                    showMoveFolderDialog = false
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("اصلی (بدون پوشه)", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                            uiState.folders.filter { !it.isArchived }.forEach { folder ->
+                                TextButton(
+                                    onClick = {
+                                        viewModel.moveDocumentToFolder(folder.id)
+                                        showMoveFolderDialog = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Folder,
+                                            contentDescription = null,
+                                            tint = Color(0xFF2563EB),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(folder.name, fontWeight = FontWeight.Medium)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showMoveFolderDialog = false }) {
+                            Text("انصراف")
+                        }
+                    }
+                )
+            }
+
+            // Delete Confirm Dialog
+            if (showDeleteConfirmDialog) {
+                AlertDialog(
+                    onDismissRequest = { showDeleteConfirmDialog = false },
+                    title = { Text("انتقال به سطل زباله", fontWeight = FontWeight.Bold) },
+                    text = { Text("آیا از انتقال این سند به سطل زباله اطمینان دارید؟") },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.deleteDocument {
+                                    showDeleteConfirmDialog = false
+                                    onNavigateBack()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("انتقال به سطل زباله")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                            Text("انصراف")
+                        }
+                    }
+                )
+            }
         }
+    }
+}
+
+@Composable
+fun ColorAdjustmentsPanel(
+    uiState: EditUiState,
+    viewModel: EditViewModel,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = 210.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "تنظیمات پیشرفته رنگ و تصویر",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            TextButton(
+                onClick = { viewModel.resetAdjustments() },
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("بازنشانی", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(2.dp))
+
+        // 1. Brightness
+        AdjustmentSliderRow(
+            icon = Icons.Default.Brightness6,
+            label = "روشنایی",
+            value = uiState.brightness,
+            valueRange = -0.6f..0.6f,
+            valueText = "${(uiState.brightness * 100).toInt()}%",
+            onValueChange = { viewModel.updateBrightness(it) }
+        )
+
+        // 2. Contrast
+        AdjustmentSliderRow(
+            icon = Icons.Default.Contrast,
+            label = "کنتراست",
+            value = uiState.contrast,
+            valueRange = 0.5f..2.0f,
+            valueText = String.format("%.1fx", uiState.contrast),
+            onValueChange = { viewModel.updateContrast(it) }
+        )
+
+        // 3. Saturation
+        AdjustmentSliderRow(
+            icon = Icons.Default.Palette,
+            label = "اشباع رنگ",
+            value = uiState.saturation,
+            valueRange = 0.0f..2.0f,
+            valueText = String.format("%.1fx", uiState.saturation),
+            onValueChange = { viewModel.updateSaturation(it) }
+        )
+
+        // 4. Warmth / Temperature
+        AdjustmentSliderRow(
+            icon = Icons.Default.WbSunny,
+            label = "دمای رنگ",
+            value = uiState.warmth,
+            valueRange = -0.5f..0.5f,
+            valueText = if (uiState.warmth > 0.05f) "گرم" else if (uiState.warmth < -0.05f) "سرد" else "طبیعی",
+            onValueChange = { viewModel.updateWarmth(it) }
+        )
+
+        // 5. Sharpness / Clarity
+        AdjustmentSliderRow(
+            icon = Icons.Default.HighQuality,
+            label = "شفافیت",
+            value = uiState.sharpness,
+            valueRange = 0.5f..2.0f,
+            valueText = String.format("%.1fx", uiState.sharpness),
+            onValueChange = { viewModel.updateSharpness(it) }
+        )
+    }
+}
+
+@Composable
+private fun AdjustmentSliderRow(
+    icon: ImageVector,
+    label: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    valueText: String,
+    onValueChange: (Float) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.width(65.dp)
+        )
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = valueText,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.width(42.dp)
+        )
     }
 }

@@ -11,6 +11,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import kotlinx.coroutines.isActive
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GridView
@@ -60,6 +62,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.ui.components.bounceClick
 import com.example.util.AdManager
 import com.example.util.AppExpirationUtils
@@ -96,7 +99,11 @@ import com.example.ui.components.FloatingScanButton
 import com.example.util.PdfGenerator
 
 import androidx.compose.material.icons.filled.PrivacyTip
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Security
+import com.example.ui.theme.AppThemeMode
+import com.example.ui.theme.ThemeManager
 
 import com.example.data.local.FolderEntity
 import androidx.compose.material.icons.filled.Archive
@@ -104,6 +111,10 @@ import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material3.ButtonDefaults
 
@@ -111,7 +122,7 @@ import androidx.compose.material3.ButtonDefaults
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onNavigateToCamera: (folderId: Long?) -> Unit,
+    onNavigateToCamera: (folderId: Long?, isColorScan: Boolean) -> Unit,
     onNavigateToEdit: (documentId: Long) -> Unit,
     onNavigateToDetail: (documentId: Long) -> Unit,
     onNavigateToPrivacy: () -> Unit = {}
@@ -128,9 +139,11 @@ fun HomeScreen(
     
     var folderToEditTarget by remember { mutableStateOf<FolderEntity?>(null) }
     var folderToDeleteTarget by remember { mutableStateOf<FolderEntity?>(null) }
+    var showEmptyTrashConfirmDialog by remember { mutableStateOf(false) }
+    var showPermanentlyDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-    // Ad Popup Dialog States
-    var showAdDialog by remember { mutableStateOf(true) }
+    // Ad Popup Dialog States (Shown every 4 minutes)
+    var showAdDialog by rememberSaveable { mutableStateOf(AdManager.shouldShowAd(context)) }
     var adImageUrl by remember { mutableStateOf(AdManager.DEFAULT_IMAGE_URL) }
     var adTargetUrl by remember { mutableStateOf("https://github.com/cafenetnetadib24-design/english701") }
 
@@ -142,6 +155,17 @@ fun HomeScreen(
         val refreshed = AdManager.refreshAdInfoIfNeeded(context)
         adImageUrl = refreshed.first
         adTargetUrl = refreshed.second
+
+        // Periodic check to trigger ad every 4 minutes
+        while (true) {
+            kotlinx.coroutines.delay(5_000L)
+            if (AdManager.shouldShowAd(context)) {
+                val latest = AdManager.getCachedAdInfo(context)
+                adImageUrl = latest.first
+                adTargetUrl = latest.second
+                showAdDialog = true
+            }
+        }
     }
 
     // System share launcher when PDF export is ready
@@ -181,30 +205,49 @@ fun HomeScreen(
                         }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            viewModel.saveSelectedDocumentsToGallery(context) { success, count ->
-                                if (success) {
-                                    Toast.makeText(
-                                        context,
-                                        "با موفقیت $count تصویر اسناد انتخاب شده در گالری ذخیره شد",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    Toast.makeText(context, "خطا در ذخیره‌سازی در گالری", Toast.LENGTH_SHORT).show()
-                                }
+                        if (uiState.selectedFolderId == -2L) {
+                            // Trash mode multi-select actions
+                            IconButton(onClick = { viewModel.restoreSelectedDocuments() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Restore,
+                                    contentDescription = "بازگردانی",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
-                        }) {
-                            Icon(imageVector = Icons.Default.Image, contentDescription = "ذخیره دسته‌ای در گالری")
-                        }
-                        IconButton(onClick = { showMoveToFolderDialog = true }) {
-                            Icon(imageVector = Icons.Default.DriveFileMove, contentDescription = "انتقال")
-                        }
-                        IconButton(onClick = { viewModel.deleteSelectedDocuments() }) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "حذف",
-                                tint = MaterialTheme.colorScheme.error
-                            )
+                            IconButton(onClick = { showPermanentlyDeleteConfirmDialog = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteForever,
+                                    contentDescription = "حذف دائمی",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        } else {
+                            // Normal mode multi-select actions
+                            IconButton(onClick = {
+                                viewModel.saveSelectedDocumentsToGallery(context) { success, count ->
+                                    if (success) {
+                                        Toast.makeText(
+                                            context,
+                                            "با موفقیت $count تصویر اسناد انتخاب شده در گالری ذخیره شد",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(context, "خطا در ذخیره‌سازی در گالری", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }) {
+                                Icon(imageVector = Icons.Default.Image, contentDescription = "ذخیره دسته‌ای در گالری")
+                            }
+                            IconButton(onClick = { showMoveToFolderDialog = true }) {
+                                Icon(imageVector = Icons.Default.DriveFileMove, contentDescription = "انتقال")
+                            }
+                            IconButton(onClick = { viewModel.deleteSelectedDocuments() }) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "انتقال به سطل زباله",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
@@ -216,13 +259,13 @@ fun HomeScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFF8FAFC))
+                        .background(MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = Color.White,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                         shadowElevation = 2.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -235,7 +278,7 @@ fun HomeScreen(
                             Icon(
                                 imageVector = Icons.Default.Search,
                                 contentDescription = "جستجو",
-                                tint = Color(0xFF94A3B8),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -245,7 +288,7 @@ fun HomeScreen(
                                 placeholder = {
                                     Text(
                                         text = "جستجوی اسناد...",
-                                        color = Color(0xFF94A3B8),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 14.sp
                                     )
                                 },
@@ -253,7 +296,7 @@ fun HomeScreen(
                                 trailingIcon = {
                                     if (uiState.searchQuery.isNotEmpty()) {
                                         IconButton(onClick = { viewModel.onSearchQueryChange("") }) {
-                                            Icon(Icons.Default.Close, contentDescription = "پاکسازی جستجو", tint = Color(0xFF94A3B8))
+                                            Icon(Icons.Default.Close, contentDescription = "پاکسازی جستجو", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
                                 },
@@ -266,6 +309,22 @@ fun HomeScreen(
                                 modifier = Modifier.weight(1f)
                             )
 
+                            // Theme Toggle Button
+                            IconButton(
+                                onClick = { ThemeManager.toggleTheme(context) },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (ThemeManager.currentThemeMode == AppThemeMode.DARK)
+                                        Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "تغییر پوسته",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(2.dp))
+
                             // Privacy Policy Shield Icon Button
                             IconButton(
                                 onClick = onNavigateToPrivacy,
@@ -274,7 +333,7 @@ fun HomeScreen(
                                 Icon(
                                     imageVector = Icons.Default.Security,
                                     contentDescription = "حریم خصوصی و امنیت",
-                                    tint = Color(0xFF2563EB),
+                                    tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -285,7 +344,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             FloatingScanButton(
-                onCameraScanClick = { onNavigateToCamera(uiState.selectedFolderId) },
+                onCameraScanClick = { onNavigateToCamera(uiState.selectedFolderId, false) },
                 onGalleryImportClick = { galleryLauncher.launch("image/*") }
             )
         }
@@ -347,6 +406,37 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
                                     text = "علاقه‌مندی‌ها",
+                                    color = if (isSelected) Color.White else Color(0xFF475569),
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+
+                    item {
+                        val isSelected = uiState.selectedFolderId == -2L
+                        Surface(
+                            onClick = { viewModel.onSelectFolder(-2L) },
+                            modifier = Modifier.bounceClick(),
+                            shape = CircleShape,
+                            color = if (isSelected) Color(0xFFEF4444) else Color.White,
+                            shadowElevation = if (isSelected) 2.dp else 1.dp,
+                            border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE2E8F0))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color.White else Color(0xFFEF4444),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "سطل زباله",
                                     color = if (isSelected) Color.White else Color(0xFF475569),
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                     fontSize = 13.sp
@@ -517,6 +607,71 @@ fun HomeScreen(
                             }
                         }
                     }
+                } else if (uiState.selectedFolderId == -2L) {
+                    // Trash Folder Banner
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFFFEF2F2),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(Color(0xFFFEE2E2), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.DeleteSweep,
+                                        contentDescription = null,
+                                        tint = Color(0xFFDC2626),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "سطل زباله (نگهداری ۳۰ روزه)",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF991B1B)
+                                    )
+                                    Text(
+                                        text = "اسناد پس از ۳۰ روز به طور خودکار پاک می‌شوند",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFFB91C1C)
+                                    )
+                                }
+                            }
+
+                            if (uiState.documents.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = { showEmptyTrashConfirmDialog = true },
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = Color(0xFFDC2626)
+                                    ),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("خالی کردن سطل", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Section Title & View/Sort Options
@@ -528,7 +683,11 @@ fun HomeScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "اسکن‌های اخیر",
+                        text = when (uiState.selectedFolderId) {
+                            -2L -> "اسناد موجود در سطل زباله"
+                            -1L -> "اسناد علاقه‌مندی"
+                            else -> "اسکن‌های اخیر"
+                        },
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF64748B),
@@ -599,30 +758,43 @@ fun HomeScreen(
                             modifier = Modifier.padding(32.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.DocumentScanner,
+                                imageVector = if (uiState.selectedFolderId == -2L) Icons.Default.DeleteOutline else Icons.Default.DocumentScanner,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
                                 modifier = Modifier.size(80.dp)
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                text = if (uiState.searchQuery.isNotEmpty()) "هیچ سندی یافت نشد" else "هنوز سندی وجود ندارد",
+                                text = when {
+                                    uiState.searchQuery.isNotEmpty() -> "هیچ سندی یافت نشد"
+                                    uiState.selectedFolderId == -2L -> "سطل زباله خالی است"
+                                    else -> "هنوز سندی وجود ندارد"
+                                },
                                 fontSize = 18.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "برای اسکن اسناد با کیفیت بالا روی دکمه آبی اسکن کلیک کنید.",
+                                text = when {
+                                    uiState.selectedFolderId == -2L -> "اسنادی که حذف می‌کنید تا ۳۰ روز در اینجا نگهداری می‌شوند."
+                                    else -> "برای اسکن اسناد با کیفیت بالا روی دکمه آبی اسکن کلیک کنید."
+                                },
                                 fontSize = 14.sp,
                                 textAlign = TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Button(onClick = { onNavigateToCamera(uiState.selectedFolderId) }) {
-                                Icon(Icons.Default.DocumentScanner, contentDescription = null)
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("اسکن اولین سند")
+                            if (uiState.selectedFolderId != -2L) {
+                                Spacer(modifier = Modifier.height(24.dp))
+                                Button(
+                                    onClick = { onNavigateToCamera(uiState.selectedFolderId, false) },
+                                    modifier = Modifier.bounceClick(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
+                                ) {
+                                    Icon(Icons.Default.DocumentScanner, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("اسکن اولین سند")
+                                }
                             }
                         }
                     }
@@ -662,7 +834,13 @@ fun HomeScreen(
                                         }
                                     }
                                 },
-                                onDelete = { viewModel.deleteDocument(doc.id) }
+                                onDelete = { viewModel.deleteDocument(doc.id) },
+                                onRestore = if (uiState.selectedFolderId == -2L || doc.deletedAt != null) {
+                                    { viewModel.restoreDocument(doc.id) }
+                                } else null,
+                                onPermanentlyDelete = if (uiState.selectedFolderId == -2L || doc.deletedAt != null) {
+                                    { viewModel.permanentlyDeleteDocument(doc.id) }
+                                } else null
                             )
                         }
                     }
@@ -887,8 +1065,61 @@ fun HomeScreen(
         )
     }
 
+    // Empty Trash Confirm Dialog
+    if (showEmptyTrashConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showEmptyTrashConfirmDialog = false },
+            title = { Text("خالی کردن سطل زباله") },
+            text = { Text("آیا از حذف دائمی تمام اسناد موجود در سطل زباله اطمینان دارید؟ این عمل غیرقابل بازگشت است.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.emptyTrash()
+                        showEmptyTrashConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("حذف همه")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEmptyTrashConfirmDialog = false }) {
+                    Text("انصراف")
+                }
+            }
+        )
+    }
+
+    // Permanently Delete Selected Documents Dialog
+    if (showPermanentlyDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermanentlyDeleteConfirmDialog = false },
+            title = { Text("حذف دائمی اسناد انتخاب شده") },
+            text = { Text("آیا از حذف دائمی اسناد انتخاب شده اطمینان دارید؟ این عمل غیرقابل بازگشت است.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.permanentlyDeleteSelectedDocuments()
+                        showPermanentlyDeleteConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("حذف دائمی")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermanentlyDeleteConfirmDialog = false }) {
+                    Text("انصراف")
+                }
+            }
+        )
+    }
+
     // Ad Banner Popup Dialog on HomeScreen Entry
     if (showAdDialog) {
+        LaunchedEffect(Unit) {
+            AdManager.markAdShown(context)
+        }
         Dialog(
             onDismissRequest = { showAdDialog = false },
             properties = DialogProperties(

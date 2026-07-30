@@ -2,8 +2,10 @@ package com.example.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -38,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -58,13 +61,29 @@ fun EdgeOverlayView(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scanline")
     val scanlineY by infiniteTransition.animateFloat(
-        initialValue = 0.15f,
-        targetValue = 0.85f,
+        initialValue = 0.08f,
+        targetValue = 0.92f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2200, easing = FastOutSlowInEasing),
+            animation = tween(1800, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "yPosition"
+    )
+
+    val laserGlowPulse by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(650, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "laserGlowPulse"
+    )
+
+    val laserAlpha by animateFloatAsState(
+        targetValue = if (isDocumentDetected) 1.0f else 0.5f,
+        animationSpec = tween(350),
+        label = "laserAlpha"
     )
 
     // Determine target indicator colors
@@ -183,16 +202,95 @@ fun EdgeOverlayView(
                 style = Stroke(width = strokeW)
             )
 
-            // Animated Laser Scanline when in focus & detected
-            if (isDocumentDetected && focusCondition == FocusCondition.SHARP) {
-                val currentScanY = top + (rectHeight * scanlineY)
-                drawLine(
-                    color = animatedBorderColor,
-                    start = Offset(left + 12f, currentScanY),
-                    end = Offset(right - 12f, currentScanY),
-                    strokeWidth = 3.5f.dp.toPx()
+            // High-Tech Laser Scanning Beam Animation
+            val currentScanY = top + (rectHeight * scanlineY)
+            val laserBeamColor = if (isDocumentDetected) {
+                if (focusCondition == FocusCondition.SHARP) Color(0xFF00E5FF) else Color(0xFFF97316)
+            } else {
+                Color(0xBB38BDF8)
+            }
+
+            // 1. Laser Gradient Trail (Aura swept behind laser line)
+            val trailHeight = 44.dp.toPx()
+            val trailTop = maxOf(top, currentScanY - trailHeight)
+            val trailBottom = minOf(bottom, currentScanY + 6.dp.toPx())
+
+            if (trailBottom > trailTop) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            laserBeamColor.copy(alpha = 0.0f),
+                            laserBeamColor.copy(alpha = 0.12f * laserAlpha * laserGlowPulse),
+                            laserBeamColor.copy(alpha = 0.35f * laserAlpha * laserGlowPulse),
+                            Color.Transparent
+                        ),
+                        startY = trailTop,
+                        endY = trailBottom
+                    ),
+                    topLeft = Offset(left + 8f, trailTop),
+                    size = Size(rectWidth - 16f, trailBottom - trailTop)
                 )
             }
+
+            // 2. Outer Soft Glowing Line
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        laserBeamColor.copy(alpha = 0.1f * laserAlpha),
+                        laserBeamColor.copy(alpha = 0.65f * laserAlpha * laserGlowPulse),
+                        laserBeamColor.copy(alpha = 0.1f * laserAlpha)
+                    ),
+                    startX = left + 8f,
+                    endX = right - 8f
+                ),
+                start = Offset(left + 8f, currentScanY),
+                end = Offset(right - 8f, currentScanY),
+                strokeWidth = 9.dp.toPx()
+            )
+
+            // 3. Central Bright High-Contrast Core Laser Line
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        laserBeamColor.copy(alpha = 0.5f * laserAlpha),
+                        Color.White.copy(alpha = 0.95f * laserAlpha),
+                        laserBeamColor.copy(alpha = 0.5f * laserAlpha)
+                    ),
+                    startX = left + 12f,
+                    endX = right - 12f
+                ),
+                start = Offset(left + 12f, currentScanY),
+                end = Offset(right - 12f, currentScanY),
+                strokeWidth = 3.5f.dp.toPx()
+            )
+
+            // 4. Glowing End-Cap Laser Nodes
+            val nodeRadius = 5.dp.toPx()
+            val glowRadius = 11.dp.toPx()
+
+            // Left Node
+            drawCircle(
+                color = laserBeamColor.copy(alpha = 0.4f * laserAlpha * laserGlowPulse),
+                radius = glowRadius,
+                center = Offset(left + 12f, currentScanY)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.95f * laserAlpha),
+                radius = nodeRadius,
+                center = Offset(left + 12f, currentScanY)
+            )
+
+            // Right Node
+            drawCircle(
+                color = laserBeamColor.copy(alpha = 0.4f * laserAlpha * laserGlowPulse),
+                radius = glowRadius,
+                center = Offset(right - 12f, currentScanY)
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.95f * laserAlpha),
+                radius = nodeRadius,
+                center = Offset(right - 12f, currentScanY)
+            )
         }
 
         // Top Column: Live Status Guidance + Focus & Lighting Indicator Pills

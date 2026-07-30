@@ -20,12 +20,12 @@ import kotlin.math.max
  * Result of document boundary detection containing normalized quadrilateral corner coordinates (0.0f .. 1.0f).
  */
 data class DetectedDocumentBounds(
-    val rect: RectF = RectF(0.05f, 0.05f, 0.95f, 0.95f),
-    val topLeft: PointF = PointF(0.05f, 0.05f),
-    val topRight: PointF = PointF(0.95f, 0.05f),
-    val bottomRight: PointF = PointF(0.95f, 0.95f),
-    val bottomLeft: PointF = PointF(0.05f, 0.95f),
-    val confidence: Float = 0.85f,
+    val rect: RectF = RectF(0.0f, 0.0f, 1.0f, 1.0f),
+    val topLeft: PointF = PointF(0.0f, 0.0f),
+    val topRight: PointF = PointF(1.0f, 0.0f),
+    val bottomRight: PointF = PointF(1.0f, 1.0f),
+    val bottomLeft: PointF = PointF(0.0f, 1.0f),
+    val confidence: Float = 1.0f,
     val isDetected: Boolean = true
 )
 
@@ -70,54 +70,9 @@ object DocumentEdgeDetector {
                             maxY = maxOf(maxY, normBottom)
                         }
 
-                        if (minX < maxX && minY < maxY) {
-                            // Expand boundary around text region for paper margins
-                            val padX = maxOf(0.04f, (maxX - minX) * 0.08f)
-                            val padY = maxOf(0.04f, (maxY - minY) * 0.08f)
-
-                            val docLeft = (minX - padX).coerceIn(0.02f, 0.45f)
-                            val docTop = (minY - padY).coerceIn(0.02f, 0.45f)
-                            val docRight = (maxX + padX).coerceIn(0.55f, 0.98f)
-                            val docBottom = (maxY + padY).coerceIn(0.55f, 0.98f)
-
-                            // Refine physical outer paper edges using Sobel gradient
-                            val edgeBounds = detectDocumentBoundaries(sourceBitmap)
-
-                            val finalTL = PointF(
-                                if (edgeBounds.isDetected) (edgeBounds.topLeft.x * 0.6f + docLeft * 0.4f) else docLeft,
-                                if (edgeBounds.isDetected) (edgeBounds.topLeft.y * 0.6f + docTop * 0.4f) else docTop
-                            )
-                            val finalTR = PointF(
-                                if (edgeBounds.isDetected) (edgeBounds.topRight.x * 0.6f + docRight * 0.4f) else docRight,
-                                if (edgeBounds.isDetected) (edgeBounds.topRight.y * 0.6f + docTop * 0.4f) else docTop
-                            )
-                            val finalBR = PointF(
-                                if (edgeBounds.isDetected) (edgeBounds.bottomRight.x * 0.6f + docRight * 0.4f) else docRight,
-                                if (edgeBounds.isDetected) (edgeBounds.bottomRight.y * 0.6f + docBottom * 0.4f) else docBottom
-                            )
-                            val finalBL = PointF(
-                                if (edgeBounds.isDetected) (edgeBounds.bottomLeft.x * 0.6f + docLeft * 0.4f) else docLeft,
-                                if (edgeBounds.isDetected) (edgeBounds.bottomLeft.y * 0.6f + docBottom * 0.4f) else docBottom
-                            )
-
-                            val rect = RectF(
-                                minOf(finalTL.x, finalBL.x),
-                                minOf(finalTL.y, finalTR.y),
-                                maxOf(finalTR.x, finalBR.x),
-                                maxOf(finalBL.y, finalBR.y)
-                            )
-
-                            continuation.resume(
-                                DetectedDocumentBounds(
-                                    rect = rect,
-                                    topLeft = finalTL,
-                                    topRight = finalTR,
-                                    bottomRight = finalBR,
-                                    bottomLeft = finalBL,
-                                    confidence = 0.98f,
-                                    isDetected = true
-                                )
-                            )
+                        val edgeBounds = detectDocumentBoundaries(sourceBitmap)
+                        if (edgeBounds.isDetected) {
+                            continuation.resume(edgeBounds)
                             return@addOnSuccessListener
                         }
                     }
@@ -145,11 +100,11 @@ object DocumentEdgeDetector {
         val height = sourceBitmap.height
 
         val fallbackBounds = DetectedDocumentBounds(
-            rect = RectF(0.05f, 0.05f, 0.95f, 0.95f),
-            topLeft = PointF(0.05f, 0.05f),
-            topRight = PointF(0.95f, 0.05f),
-            bottomRight = PointF(0.95f, 0.95f),
-            bottomLeft = PointF(0.05f, 0.95f),
+            rect = RectF(0.0f, 0.0f, 1.0f, 1.0f),
+            topLeft = PointF(0.0f, 0.0f),
+            topRight = PointF(1.0f, 0.0f),
+            bottomRight = PointF(1.0f, 1.0f),
+            bottomLeft = PointF(0.0f, 1.0f),
             confidence = 0.5f,
             isDetected = false
         )

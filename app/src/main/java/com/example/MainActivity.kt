@@ -14,10 +14,12 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.navigation.compose.rememberNavController
 import com.example.ui.navigation.NavGraph
 import com.example.ui.theme.MyApplicationTheme
+import com.example.ui.theme.ThemeManager
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    ThemeManager.init(this)
     enableEdgeToEdge()
     setContent {
       MyApplicationTheme {

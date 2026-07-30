@@ -19,9 +19,12 @@ import kotlinx.coroutines.launch
 
 import android.graphics.PointF
 
+import com.example.data.local.FolderEntity
+
 data class EditUiState(
     val document: DocumentEntity? = null,
     val pages: List<DocumentPageEntity> = emptyList(),
+    val folders: List<FolderEntity> = emptyList(),
     val currentPageIndex: Int = 0,
     val selectedFilter: ScanFilter = ScanFilter.MAGIC_COLOR,
     val cropRect: RectF = RectF(0f, 0f, 1f, 1f),
@@ -32,6 +35,9 @@ data class EditUiState(
     val rotationDegrees: Int = 0,
     val brightness: Float = 0f,
     val contrast: Float = 1f,
+    val saturation: Float = 1f,
+    val warmth: Float = 0f,
+    val sharpness: Float = 1f,
     val isProcessing: Boolean = false,
     val currentOcrText: String = "",
     val aiSummaryText: String = "",
@@ -55,43 +61,81 @@ class EditViewModel(
 
     init {
         loadDocument()
+        loadFolders()
+    }
+
+    private fun loadFolders() {
+        viewModelScope.launch {
+            repository.activeFolders.collect { folderList ->
+                _uiState.value = _uiState.value.copy(folders = folderList)
+            }
+        }
+    }
+
+    fun renameDocument(newTitle: String) {
+        viewModelScope.launch {
+            repository.updateDocumentTitle(documentId, newTitle)
+            val updatedDoc = repository.getDocumentById(documentId)
+            _uiState.value = _uiState.value.copy(document = updatedDoc)
+        }
+    }
+
+    fun moveDocumentToFolder(folderId: Long?) {
+        viewModelScope.launch {
+            repository.moveDocumentsToFolder(listOf(documentId), folderId)
+            val updatedDoc = repository.getDocumentById(documentId)
+            _uiState.value = _uiState.value.copy(document = updatedDoc)
+        }
+    }
+
+    fun deleteDocument(onDeleted: () -> Unit) {
+        viewModelScope.launch {
+            repository.moveToTrash(documentId)
+            onDeleted()
+        }
     }
 
     private fun loadDocument() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
             val doc = repository.getDocumentById(documentId)
-            val pages = repository.getPagesListForDocument(documentId)
+            if (doc != null) {
+                _uiState.value = _uiState.value.copy(document = doc)
+            }
 
-            if (doc != null && pages.isNotEmpty()) {
-                val firstPage = pages.first()
-                val currentCrop = RectF(firstPage.cropLeft, firstPage.cropTop, firstPage.cropRight, firstPage.cropBottom)
-                val tl = PointF(firstPage.cropLeft, firstPage.cropTop)
-                val tr = PointF(firstPage.cropRight, firstPage.cropTop)
-                val br = PointF(firstPage.cropRight, firstPage.cropBottom)
-                val bl = PointF(firstPage.cropLeft, firstPage.cropBottom)
+            repository.getPagesForDocument(documentId).collect { pages ->
+                if (pages.isNotEmpty()) {
+                    val updatedDoc = repository.getDocumentById(documentId)
+                    val currentIndex = _uiState.value.currentPageIndex.coerceIn(0, pages.size - 1)
+                    val currentPage = pages[currentIndex]
+                    val currentCrop = RectF(currentPage.cropLeft, currentPage.cropTop, currentPage.cropRight, currentPage.cropBottom)
+                    val tl = PointF(currentPage.cropLeft, currentPage.cropTop)
+                    val tr = PointF(currentPage.cropRight, currentPage.cropTop)
+                    val br = PointF(currentPage.cropRight, currentPage.cropBottom)
+                    val bl = PointF(currentPage.cropLeft, currentPage.cropBottom)
 
-                _uiState.value = _uiState.value.copy(
-                    document = doc,
-                    pages = pages,
-                    currentPageIndex = 0,
-                    selectedFilter = try { ScanFilter.valueOf(firstPage.filterType) } catch (e: Exception) { ScanFilter.BLACK_WHITE },
-                    cropRect = currentCrop,
-                    topLeft = tl,
-                    topRight = tr,
-                    bottomRight = br,
-                    bottomLeft = bl,
-                    rotationDegrees = firstPage.rotationDegrees,
-                    brightness = firstPage.brightness,
-                    contrast = firstPage.contrast,
-                    currentOcrText = firstPage.ocrText,
-                    isProcessing = false
-                )
-                if (currentCrop.left == 0f && currentCrop.top == 0f && currentCrop.right == 1f && currentCrop.bottom == 1f) {
-                    autoDetectEdges()
+                    _uiState.value = _uiState.value.copy(
+                        document = updatedDoc ?: doc ?: _uiState.value.document,
+                        pages = pages,
+                        currentPageIndex = currentIndex,
+                        selectedFilter = try { ScanFilter.valueOf(currentPage.filterType) } catch (e: Exception) { ScanFilter.MAGIC_COLOR },
+                        cropRect = currentCrop,
+                        topLeft = tl,
+                        topRight = tr,
+                        bottomRight = br,
+                        bottomLeft = bl,
+                        rotationDegrees = currentPage.rotationDegrees,
+                        brightness = currentPage.brightness,
+                        contrast = currentPage.contrast,
+                        saturation = currentPage.saturation,
+                        warmth = currentPage.warmth,
+                        sharpness = currentPage.sharpness,
+                        currentOcrText = currentPage.ocrText,
+                        isProcessing = false
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isProcessing = true)
                 }
-            } else {
-                _uiState.value = _uiState.value.copy(isProcessing = false)
             }
         }
     }
@@ -116,6 +160,9 @@ class EditViewModel(
                 rotationDegrees = page.rotationDegrees,
                 brightness = page.brightness,
                 contrast = page.contrast,
+                saturation = page.saturation,
+                warmth = page.warmth,
+                sharpness = page.sharpness,
                 currentOcrText = page.ocrText
             )
         }
@@ -189,9 +236,79 @@ class EditViewModel(
         applyChangesToCurrentPage(onComplete)
     }
 
-    fun updateBrightnessContrast(brightness: Float, contrast: Float) {
-        _uiState.value = _uiState.value.copy(brightness = brightness, contrast = contrast)
-        applyChangesToCurrentPage()
+    private var saveAdjustmentsJob: kotlinx.coroutines.Job? = null
+
+    fun updateBrightness(brightness: Float) {
+        _uiState.value = _uiState.value.copy(brightness = brightness)
+        scheduleSaveAdjustments()
+    }
+
+    fun updateContrast(contrast: Float) {
+        _uiState.value = _uiState.value.copy(contrast = contrast)
+        scheduleSaveAdjustments()
+    }
+
+    fun updateSaturation(saturation: Float) {
+        _uiState.value = _uiState.value.copy(saturation = saturation)
+        scheduleSaveAdjustments()
+    }
+
+    fun updateWarmth(warmth: Float) {
+        _uiState.value = _uiState.value.copy(warmth = warmth)
+        scheduleSaveAdjustments()
+    }
+
+    fun updateSharpness(sharpness: Float) {
+        _uiState.value = _uiState.value.copy(sharpness = sharpness)
+        scheduleSaveAdjustments()
+    }
+
+    fun resetAdjustments() {
+        _uiState.value = _uiState.value.copy(
+            brightness = 0f,
+            contrast = 1f,
+            saturation = 1f,
+            warmth = 0f,
+            sharpness = 1f
+        )
+        scheduleSaveAdjustments()
+    }
+
+    private fun scheduleSaveAdjustments() {
+        saveAdjustmentsJob?.cancel()
+        saveAdjustmentsJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(450)
+            applyChangesQuietly()
+        }
+    }
+
+    private suspend fun applyChangesQuietly() {
+        val pages = _uiState.value.pages
+        val index = _uiState.value.currentPageIndex
+        if (index !in pages.indices) return
+        val page = pages[index]
+
+        val updatedPage = repository.updatePageFilterAndAdjustments(
+            page = page,
+            filter = _uiState.value.selectedFilter,
+            cropRect = _uiState.value.cropRect,
+            rotationDegrees = _uiState.value.rotationDegrees,
+            brightness = _uiState.value.brightness,
+            contrast = _uiState.value.contrast,
+            saturation = _uiState.value.saturation,
+            warmth = _uiState.value.warmth,
+            sharpness = _uiState.value.sharpness,
+            topLeft = _uiState.value.topLeft,
+            topRight = _uiState.value.topRight,
+            bottomRight = _uiState.value.bottomRight,
+            bottomLeft = _uiState.value.bottomLeft
+        )
+
+        val updatedPages = pages.toMutableList().apply { set(index, updatedPage) }
+        _uiState.value = _uiState.value.copy(
+            pages = updatedPages,
+            currentOcrText = updatedPage.ocrText
+        )
     }
 
     private fun applyChangesToCurrentPage(onComplete: () -> Unit = {}) {
@@ -209,6 +326,9 @@ class EditViewModel(
                 rotationDegrees = _uiState.value.rotationDegrees,
                 brightness = _uiState.value.brightness,
                 contrast = _uiState.value.contrast,
+                saturation = _uiState.value.saturation,
+                warmth = _uiState.value.warmth,
+                sharpness = _uiState.value.sharpness,
                 topLeft = _uiState.value.topLeft,
                 topRight = _uiState.value.topRight,
                 bottomRight = _uiState.value.bottomRight,

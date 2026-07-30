@@ -55,7 +55,8 @@ object PdfGenerator {
         pdfTitle: String,
         quality: PdfQuality = PdfQuality.HIGH,
         watermarkText: String? = null,
-        addPageNumbers: Boolean = true
+        addPageNumbers: Boolean = true,
+        password: String? = null
     ): File? {
         val validPaths = pageImagePaths.filter { File(it).exists() && File(it).length() > 0 }
         if (validPaths.isEmpty()) return null
@@ -161,6 +162,15 @@ object PdfGenerator {
                 pdfDocument.writeTo(out)
             }
 
+            if (!password.isNullOrBlank()) {
+                val encFile = File(pdfDir, "enc_${sanitizedTitle}_${System.currentTimeMillis()}.pdf")
+                val success = PdfEncryptor.encryptPdfFile(pdfFile, encFile, password.trim())
+                if (success && encFile.exists() && encFile.length() > 0) {
+                    pdfFile.delete()
+                    return encFile
+                }
+            }
+
             return pdfFile
         } catch (e: Exception) {
             e.printStackTrace()
@@ -217,6 +227,40 @@ object PdfGenerator {
                 "خطا در اشتراک‌گذاری: ${e.localizedMessage ?: "برنامه‌ای برای ارسال PDF یافت نشد"}",
                 android.widget.Toast.LENGTH_LONG
             ).show()
+        }
+    }
+
+    fun savePdfToDeviceStorage(context: Context, pdfFile: File, title: String): Boolean {
+        return try {
+            val sanitized = title.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().ifBlank { "Document" }
+            val fileName = "${sanitized}_${System.currentTimeMillis()}.pdf"
+
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS + "/DocScanner")
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { outputStream ->
+                        pdfFile.inputStream().use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    }
+                    true
+                } else false
+            } else {
+                val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val docDir = File(downloadsDir, "DocScanner").apply { if (!exists()) mkdirs() }
+                val targetFile = File(docDir, fileName)
+                pdfFile.copyTo(targetFile, overwrite = true)
+                true
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 }
