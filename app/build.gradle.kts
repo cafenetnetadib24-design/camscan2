@@ -24,24 +24,6 @@ android {
   }
 
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/release-key.jks"
-      val ksFile = file(keystorePath)
-      val envStorePass = System.getenv("STORE_PASSWORD").takeIf { !it.isNullOrBlank() }
-        ?: System.getenv("KEYSTORE_PASSWORD").takeIf { !it.isNullOrBlank() }
-        ?: "docscannerrelease123"
-      val envAlias = System.getenv("KEY_ALIAS").takeIf { !it.isNullOrBlank() } ?: "docscannerkey"
-      val envKeyPass = System.getenv("KEY_PASSWORD").takeIf { !it.isNullOrBlank() } ?: envStorePass
-
-      if (ksFile.exists() && ksFile.length() > 0) {
-        storeFile = ksFile
-        storePassword = envStorePass
-        keyAlias = envAlias
-        keyPassword = envKeyPass
-      } else {
-        initWith(getByName("debug"))
-      }
-    }
     create("debugConfig") {
       val debugKs = file("${rootDir}/debug.keystore")
       if (debugKs.exists()) {
@@ -51,6 +33,30 @@ android {
         keyPassword = "android"
       } else {
         initWith(getByName("debug"))
+      }
+    }
+    create("release") {
+      val envKsPath = System.getenv("KEYSTORE_PATH")
+      val ksFile = when {
+        !envKsPath.isNullOrBlank() -> file(envKsPath)
+        file("${rootDir}/my-upload-key.jks").exists() -> file("${rootDir}/my-upload-key.jks")
+        file("${rootDir}/release-key.jks").exists() -> file("${rootDir}/release-key.jks")
+        else -> null
+      }
+
+      val envStorePass = System.getenv("STORE_PASSWORD").takeIf { !it.isNullOrBlank() }
+        ?: System.getenv("KEYSTORE_PASSWORD").takeIf { !it.isNullOrBlank() }
+        ?: "android"
+      val envAlias = System.getenv("KEY_ALIAS").takeIf { !it.isNullOrBlank() } ?: "upload"
+      val envKeyPass = System.getenv("KEY_PASSWORD").takeIf { !it.isNullOrBlank() } ?: envStorePass
+
+      if (ksFile != null && ksFile.exists() && ksFile.length() > 0) {
+        storeFile = ksFile
+        storePassword = envStorePass
+        keyAlias = envAlias
+        keyPassword = envKeyPass
+      } else {
+        initWith(getByName("debugConfig"))
       }
     }
   }
