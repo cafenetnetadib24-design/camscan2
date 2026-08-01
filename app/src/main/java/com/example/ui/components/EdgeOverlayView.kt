@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,8 +62,8 @@ fun EdgeOverlayView(
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "scanline")
     val scanlineY by infiniteTransition.animateFloat(
-        initialValue = 0.08f,
-        targetValue = 0.92f,
+        initialValue = 0.05f,
+        targetValue = 0.95f,
         animationSpec = infiniteRepeatable(
             animation = tween(1800, easing = LinearEasing),
             repeatMode = RepeatMode.Reverse
@@ -101,20 +102,10 @@ fun EdgeOverlayView(
     )
 
     val fillColor = when {
-        !isDocumentDetected -> Color(0x11FFFFFF)
-        focusCondition == FocusCondition.BLURRY -> Color(0x22F97316)
-        lightingCondition == LightingCondition.DARK || lightingCondition == LightingCondition.GLARE -> Color(0x22FACC15)
-        else -> Color(0x2210B981)
-    }
-
-    // Determine guidance status text & badge background
-    val (statusMessage, statusBgColor) = when {
-        customStatusText != null -> Pair(customStatusText, Color(0xCC0F172A))
-        !isDocumentDetected -> Pair("سند را داخل کادر قرار دهید", Color(0xCC0F172A))
-        focusCondition == FocusCondition.BLURRY -> Pair("⚠️ تصویر تار است - دوربین را ثابت نگه‌دارید", Color(0xEEEA580C))
-        lightingCondition == LightingCondition.DARK -> Pair("💡 نور محیط کم است - فلاش را روشن کنید", Color(0xEED97706))
-        lightingCondition == LightingCondition.GLARE -> Pair("☀️ بازتاب شدید نور - زاویه دوربین را تغییر دهید", Color(0xEED97706))
-        else -> Pair("✓ کیفیت عالی - آماده اسکن خودکار", Color(0xEE059669))
+        !isDocumentDetected -> Color(0x05FFFFFF)
+        focusCondition == FocusCondition.BLURRY -> Color(0x15F97316)
+        lightingCondition == LightingCondition.DARK || lightingCondition == LightingCondition.GLARE -> Color(0x15FACC15)
+        else -> Color(0x1510B981)
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -122,11 +113,12 @@ fun EdgeOverlayView(
             val w = size.width
             val h = size.height
 
-            // Document Viewfinder Margin Bounds (Default Scanner Rect)
-            val left = w * 0.10f
-            val top = h * 0.18f
-            val right = w * 0.90f
-            val bottom = h * 0.78f
+            // Document Viewfinder Bounds matching Card Container
+            val inset = 8.dp.toPx()
+            val left = inset
+            val top = inset
+            val right = w - inset
+            val bottom = h - inset
             val rectWidth = right - left
             val rectHeight = bottom - top
 
@@ -145,7 +137,7 @@ fun EdgeOverlayView(
                 size = Size(rectWidth, rectHeight),
                 cornerRadius = CornerRadius(16.dp.toPx(), 16.dp.toPx()),
                 style = Stroke(
-                    width = 3.dp.toPx(),
+                    width = 2.5f.dp.toPx(),
                     pathEffect = if (focusCondition == FocusCondition.BLURRY) {
                         PathEffect.dashPathEffect(floatArrayOf(16f, 16f), 0f)
                     } else {
@@ -155,8 +147,8 @@ fun EdgeOverlayView(
             )
 
             // High precision corner brackets
-            val bracketLen = 36.dp.toPx()
-            val strokeW = 5.dp.toPx()
+            val bracketLen = 32.dp.toPx()
+            val strokeW = 4.5f.dp.toPx()
 
             // Top-Left
             drawPath(
@@ -210,10 +202,10 @@ fun EdgeOverlayView(
                 Color(0xBB38BDF8)
             }
 
-            // 1. Laser Gradient Trail (Aura swept behind laser line)
-            val trailHeight = 44.dp.toPx()
+            // 1. Laser Gradient Trail
+            val trailHeight = 36.dp.toPx()
             val trailTop = maxOf(top, currentScanY - trailHeight)
-            val trailBottom = minOf(bottom, currentScanY + 6.dp.toPx())
+            val trailBottom = minOf(bottom, currentScanY + 4.dp.toPx())
 
             if (trailBottom > trailTop) {
                 drawRect(
@@ -221,7 +213,7 @@ fun EdgeOverlayView(
                         colors = listOf(
                             laserBeamColor.copy(alpha = 0.0f),
                             laserBeamColor.copy(alpha = 0.12f * laserAlpha * laserGlowPulse),
-                            laserBeamColor.copy(alpha = 0.35f * laserAlpha * laserGlowPulse),
+                            laserBeamColor.copy(alpha = 0.3f * laserAlpha * laserGlowPulse),
                             Color.Transparent
                         ),
                         startY = trailTop,
@@ -245,7 +237,7 @@ fun EdgeOverlayView(
                 ),
                 start = Offset(left + 8f, currentScanY),
                 end = Offset(right - 8f, currentScanY),
-                strokeWidth = 9.dp.toPx()
+                strokeWidth = 8.dp.toPx()
             )
 
             // 3. Central Bright High-Contrast Core Laser Line
@@ -261,12 +253,12 @@ fun EdgeOverlayView(
                 ),
                 start = Offset(left + 12f, currentScanY),
                 end = Offset(right - 12f, currentScanY),
-                strokeWidth = 3.5f.dp.toPx()
+                strokeWidth = 3.dp.toPx()
             )
 
             // 4. Glowing End-Cap Laser Nodes
-            val nodeRadius = 5.dp.toPx()
-            val glowRadius = 11.dp.toPx()
+            val nodeRadius = 4.dp.toPx()
+            val glowRadius = 9.dp.toPx()
 
             // Left Node
             drawCircle(
@@ -292,98 +284,113 @@ fun EdgeOverlayView(
                 center = Offset(right - 12f, currentScanY)
             )
         }
+    }
+}
 
-        // Top Column: Live Status Guidance + Focus & Lighting Indicator Pills
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = 88.dp, start = 16.dp, end = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+@Composable
+fun CameraStatusGuidance(
+    isDocumentDetected: Boolean,
+    focusCondition: FocusCondition,
+    lightingCondition: LightingCondition,
+    customStatusText: String? = null,
+    modifier: Modifier = Modifier
+) {
+    val (statusMessage, statusBgColor) = when {
+        customStatusText != null -> Pair(customStatusText, Color(0xCC0F172A))
+        !isDocumentDetected -> Pair("سند را داخل کادر قرار دهید", Color(0xCC0F172A))
+        focusCondition == FocusCondition.BLURRY -> Pair("⚠️ تصویر تار است - دوربین را ثابت نگه‌دارید", Color(0xEEEA580C))
+        lightingCondition == LightingCondition.DARK -> Pair("💡 نور محیط کم است - فلاش را روشن کنید", Color(0xEED97706))
+        lightingCondition == LightingCondition.GLARE -> Pair("☀️ بازتاب شدید نور - زاویه دوربین را تغییر دهید", Color(0xEED97706))
+        else -> Pair("✓ کیفیت عالی - آماده اسکن خودکار", Color(0xEE059669))
+    }
+
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Main Guidance Pill
+        Surface(
+            color = statusBgColor,
+            shape = RoundedCornerShape(20.dp),
+            shadowElevation = 4.dp
         ) {
-            // Main Guidance Pill
+            Text(
+                text = statusMessage,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // Real-Time Focus & Lighting Quality Badges
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Live Focus Indicator
+            val focusColor = if (focusCondition == FocusCondition.SHARP) Color(0xFF10B981) else Color(0xFFF97316)
             Surface(
-                color = statusBgColor,
-                shape = RoundedCornerShape(24.dp),
-                shadowElevation = 6.dp
+                color = Color(0xDD0F172A),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.border(1.dp, focusColor.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
             ) {
-                Text(
-                    text = statusMessage,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (focusCondition == FocusCondition.SHARP) Icons.Default.CenterFocusStrong else Icons.Default.CenterFocusWeak,
+                        contentDescription = null,
+                        tint = focusColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (focusCondition == FocusCondition.SHARP) "فوکوس: شفاف" else "فوکوس: تار",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
 
-            // Real-Time Focus & Lighting Quality Badges
-            Row(
-                modifier = Modifier
-                    .padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // Live Lighting Indicator
+            val lightColor = when (lightingCondition) {
+                LightingCondition.GOOD -> Color(0xFF10B981)
+                LightingCondition.DARK -> Color(0xFFFACC15)
+                LightingCondition.GLARE -> Color(0xFFF97316)
+            }
+            val lightText = when (lightingCondition) {
+                LightingCondition.GOOD -> "نور: مناسب"
+                LightingCondition.DARK -> "نور: کم"
+                LightingCondition.GLARE -> "نور: بازتاب زیاد"
+            }
+
+            Surface(
+                color = Color(0xDD0F172A),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.border(1.dp, lightColor.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
             ) {
-                // Live Focus Indicator
-                val focusColor = if (focusCondition == FocusCondition.SHARP) Color(0xFF10B981) else Color(0xFFF97316)
-                Surface(
-                    color = Color(0xDD0F172A),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.border(1.dp, focusColor.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (focusCondition == FocusCondition.SHARP) Icons.Default.CenterFocusStrong else Icons.Default.CenterFocusWeak,
-                            contentDescription = null,
-                            tint = focusColor,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (focusCondition == FocusCondition.SHARP) "فوکوس: شفاف" else "فوکوس: تار",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                // Live Lighting Indicator
-                val lightColor = when (lightingCondition) {
-                    LightingCondition.GOOD -> Color(0xFF10B981)
-                    LightingCondition.DARK -> Color(0xFFFACC15)
-                    LightingCondition.GLARE -> Color(0xFFF97316)
-                }
-                val lightText = when (lightingCondition) {
-                    LightingCondition.GOOD -> "نور: مناسب"
-                    LightingCondition.DARK -> "نور: کم"
-                    LightingCondition.GLARE -> "نور: بازتاب زیاد"
-                }
-
-                Surface(
-                    color = Color(0xDD0F172A),
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.border(1.dp, lightColor.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = if (lightingCondition == LightingCondition.GOOD) Icons.Default.Lightbulb else Icons.Default.WbSunny,
-                            contentDescription = null,
-                            tint = lightColor,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = lightText,
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
+                    Icon(
+                        imageVector = if (lightingCondition == LightingCondition.GOOD) Icons.Default.Lightbulb else Icons.Default.WbSunny,
+                        contentDescription = null,
+                        tint = lightColor,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = lightText,
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

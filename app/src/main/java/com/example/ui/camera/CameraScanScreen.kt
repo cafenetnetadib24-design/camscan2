@@ -99,6 +99,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import com.example.ui.components.InteractiveCropView
 import com.example.ui.components.EdgeOverlayView
+import com.example.ui.components.CameraStatusGuidance
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.navigationBarsPadding
 import com.example.ui.components.bounceClick
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
@@ -147,6 +149,8 @@ fun CameraScanScreen(
         }
     }
 
+    var cameraProviderInstance by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
     LaunchedEffect(Unit) {
         if (!cameraPermissionState.status.isGranted) {
             cameraPermissionState.launchPermissionRequest()
@@ -156,8 +160,7 @@ fun CameraScanScreen(
     DisposableEffect(lifecycleOwner) {
         onDispose {
             try {
-                val cameraProvider = ProcessCameraProvider.getInstance(context).get()
-                cameraProvider.unbindAll()
+                cameraProviderInstance?.unbindAll()
             } catch (e: Exception) {
                 Log.e("CameraScanScreen", "Error unbinding camera on dispose", e)
             }
@@ -229,147 +232,216 @@ fun CameraScanScreen(
         onRequestPermission = { cameraPermissionState.launchPermissionRequest() },
         onNavigateBack = onNavigateBack
     ) {
+        val targetBorderColor = when {
+            !uiState.isDocumentDetected -> Color(0x66FFFFFF)
+            uiState.focusCondition == FocusCondition.BLURRY -> Color(0xFFF97316)
+            uiState.lightingCondition == LightingCondition.DARK || uiState.lightingCondition == LightingCondition.GLARE -> Color(0xFFFACC15)
+            else -> Color(0xFF10B981)
+        }
+        val animatedCardBorderColor by animateColorAsState(
+            targetValue = targetBorderColor,
+            animationSpec = tween(300),
+            label = "cardBorderColor"
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(Color(0xFF0F172A))
                 .onGloballyPositioned { coords -> rootContainerSize = coords.size }
         ) {
-            // Camera Preview View
-            AndroidView(
-                factory = { ctx ->
-                    val previewView = PreviewView(ctx)
-                    currentPreviewView = previewView
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-
-                    cameraProviderFuture.addListener({
-                        val cameraProvider = cameraProviderFuture.get()
-                        val preview = Preview.Builder().build().also {
-                            it.setSurfaceProvider(previewView.surfaceProvider)
-                        }
-
-                        val capture = ImageCapture.Builder()
-                            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                            .build()
-
-                        val imageAnalysis = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .build()
-
-                        imageAnalysis.setAnalyzer(
-                            ContextCompat.getMainExecutor(ctx),
-                            CameraFrameAnalyzer { focus, lighting, score, brightness, isDetected ->
-                                viewModel.updateFrameMetrics(focus, lighting, score, brightness, isDetected)
-                            }
-                        )
-
-                        imageCapture = capture
-
-                        val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                        try {
-                            cameraProvider.unbindAll()
-                            val boundCamera = cameraProvider.bindToLifecycle(
-                                lifecycleOwner,
-                                cameraSelector,
-                                preview,
-                                capture,
-                                imageAnalysis
-                            )
-                            cameraInstance = boundCamera
-                        } catch (e: Exception) {
-                            Log.e("CameraScanScreen", "Camera binding failed", e)
-                        }
-                    }, ContextCompat.getMainExecutor(ctx))
-
-                    previewView
-                },
-                modifier = Modifier.fillMaxSize()
-            )
-
-            // Live Viewfinder Document Border Edge Overlay with Focus & Lighting Quality Indicators
-            EdgeOverlayView(
-                isDocumentDetected = uiState.isDocumentDetected,
-                focusCondition = uiState.focusCondition,
-                lightingCondition = uiState.lightingCondition,
-                customStatusText = if (uiState.isAutoCapture && uiState.focusCondition == FocusCondition.SHARP && uiState.lightingCondition == LightingCondition.GOOD) {
-                    "برای اسکن خودکار دوربین را ثابت نگه‌دارید..."
-                } else null
-            )
-
-            // Top Toolbar Controls
-            TopCameraToolbar(
-                flashMode = uiState.flashMode,
-                isAutoCapture = uiState.isAutoCapture,
-                isMultiPage = uiState.isMultiPage,
-                isColorScan = uiState.isColorScan,
-                onToggleFlash = { viewModel.toggleFlashMode() },
-                onToggleAuto = { viewModel.toggleAutoCapture() },
-                onToggleMultiPage = { viewModel.toggleMultiPage() },
-                onToggleColorScan = { viewModel.setScanMode(!uiState.isColorScan) },
-                onClose = onNavigateBack,
+            Column(
                 modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 40.dp, start = 16.dp, end = 16.dp)
-            )
+                    .fillMaxSize()
+                    .navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Top Camera Toolbar Controls
+                TopCameraToolbar(
+                    flashMode = uiState.flashMode,
+                    onToggleFlash = { viewModel.toggleFlashMode() },
+                    onClose = onNavigateBack,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 28.dp, start = 16.dp, end = 16.dp)
+                )
 
-            // Bottom Shutter & Multi-page Stack Bar
-            BottomShutterBar(
-                capturedCount = uiState.capturedBitmaps.size,
-                lastBitmap = uiState.capturedBitmaps.lastOrNull(),
-                isProcessing = uiState.isProcessing,
-                flyProgress = flyAnimProgress.value,
-                onThumbnailPositioned = { pos, size ->
-                    thumbnailOffsetInRoot = pos
-                    thumbnailSize = size
-                },
-                onThumbnailClick = {
-                    if (uiState.capturedBitmaps.isNotEmpty()) {
-                        viewModel.togglePagePreviewTray(true)
-                    }
-                },
-                onCaptureClick = {
-                    val capture = imageCapture ?: return@BottomShutterBar
-                    shutterFlashVisible = true
+                Spacer(modifier = Modifier.height(8.dp))
 
-                    when (uiState.flashMode) {
-                        FlashMode.ON -> capture.flashMode = ImageCapture.FLASH_MODE_ON
-                        FlashMode.OFF -> capture.flashMode = ImageCapture.FLASH_MODE_OFF
-                        FlashMode.AUTO -> capture.flashMode = ImageCapture.FLASH_MODE_AUTO
-                        FlashMode.TORCH -> capture.flashMode = ImageCapture.FLASH_MODE_OFF
-                    }
+                // Live Status Guidance + Focus & Lighting Indicators (Above Camera Card)
+                CameraStatusGuidance(
+                    isDocumentDetected = uiState.isDocumentDetected,
+                    focusCondition = uiState.focusCondition,
+                    lightingCondition = uiState.lightingCondition,
+                    customStatusText = if (uiState.isAutoCapture && uiState.focusCondition == FocusCondition.SHARP && uiState.lightingCondition == LightingCondition.GOOD) {
+                        "برای اسکن خودکار دوربین را ثابت نگه‌دارید..."
+                    } else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
 
-                    capture.takePicture(
-                        ContextCompat.getMainExecutor(context),
-                        object : ImageCapture.OnImageCapturedCallback() {
-                            override fun onCaptureSuccess(image: ImageProxy) {
-                                try {
-                                    cameraInstance?.cameraControl?.enableTorch(false)
-                                } catch (e: Exception) {
-                                    Log.e("CameraScanScreen", "Failed to turn off torch", e)
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Bounded Camera Viewfinder Container
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(Color.Black)
+                        .border(2.dp, animatedCardBorderColor, RoundedCornerShape(20.dp))
+                ) {
+                    // Camera Preview
+                    AndroidView(
+                        factory = { ctx ->
+                            val previewView = PreviewView(ctx)
+                            currentPreviewView = previewView
+                            val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
+                            cameraProviderFuture.addListener({
+                                val cameraProvider = cameraProviderFuture.get()
+                                cameraProviderInstance = cameraProvider
+
+                                if (ContextCompat.checkSelfPermission(
+                                        ctx,
+                                        android.Manifest.permission.CAMERA
+                                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    Log.w("CameraScanScreen", "Camera permission not granted yet, skipping bind")
+                                    return@addListener
                                 }
-                                viewModel.turnOffFlash()
-                                viewModel.addCapturedImage(image)
+
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+
+                                val capture = ImageCapture.Builder()
+                                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                                    .build()
+
+                                val imageAnalysis = ImageAnalysis.Builder()
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
+
+                                imageAnalysis.setAnalyzer(
+                                    ContextCompat.getMainExecutor(ctx),
+                                    CameraFrameAnalyzer { focus, lighting, score, brightness, isDetected ->
+                                        viewModel.updateFrameMetrics(focus, lighting, score, brightness, isDetected)
+                                    }
+                                )
+
+                                imageCapture = capture
+
+                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                                try {
+                                    cameraProvider.unbindAll()
+                                    val boundCamera = cameraProvider.bindToLifecycle(
+                                        lifecycleOwner,
+                                        cameraSelector,
+                                        preview,
+                                        capture,
+                                        imageAnalysis
+                                    )
+                                    cameraInstance = boundCamera
+                                } catch (e: Exception) {
+                                    Log.e("CameraScanScreen", "Camera binding failed", e)
+                                }
+                            }, ContextCompat.getMainExecutor(ctx))
+
+                            previewView
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Overlay inside camera card (Corner Brackets + Scanning Laser)
+                    EdgeOverlayView(
+                        isDocumentDetected = uiState.isDocumentDetected,
+                        focusCondition = uiState.focusCondition,
+                        lightingCondition = uiState.lightingCondition
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Bottom Controls (Mode Selector + Shutter Bar)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp, start = 20.dp, end = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    // Mode Selector Chips Bar
+                    ScanModeSelectorBar(
+                        isAutoCapture = uiState.isAutoCapture,
+                        isMultiPage = uiState.isMultiPage,
+                        isColorScan = uiState.isColorScan,
+                        onToggleAuto = { viewModel.toggleAutoCapture() },
+                        onToggleMultiPage = { viewModel.toggleMultiPage() },
+                        onToggleColorScan = { viewModel.setScanMode(!uiState.isColorScan) }
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Bottom Shutter & Multi-page Stack Bar
+                    BottomShutterBar(
+                        capturedCount = uiState.capturedBitmaps.size,
+                        lastBitmap = uiState.capturedBitmaps.lastOrNull(),
+                        isProcessing = uiState.isProcessing,
+                        flyProgress = flyAnimProgress.value,
+                        onThumbnailPositioned = { pos, size ->
+                            thumbnailOffsetInRoot = pos
+                            thumbnailSize = size
+                        },
+                        onThumbnailClick = {
+                            if (uiState.capturedBitmaps.isNotEmpty()) {
+                                viewModel.togglePagePreviewTray(true)
+                            }
+                        },
+                        onCaptureClick = {
+                            val capture = imageCapture ?: return@BottomShutterBar
+                            shutterFlashVisible = true
+
+                            when (uiState.flashMode) {
+                                FlashMode.ON -> capture.flashMode = ImageCapture.FLASH_MODE_ON
+                                FlashMode.OFF -> capture.flashMode = ImageCapture.FLASH_MODE_OFF
+                                FlashMode.AUTO -> capture.flashMode = ImageCapture.FLASH_MODE_AUTO
+                                FlashMode.TORCH -> capture.flashMode = ImageCapture.FLASH_MODE_OFF
                             }
 
-                            override fun onError(exception: ImageCaptureException) {
-                                Log.e("CameraScanScreen", "Capture failed: ${exception.message}", exception)
+                            capture.takePicture(
+                                ContextCompat.getMainExecutor(context),
+                                object : ImageCapture.OnImageCapturedCallback() {
+                                    override fun onCaptureSuccess(image: ImageProxy) {
+                                        try {
+                                            cameraInstance?.cameraControl?.enableTorch(false)
+                                        } catch (e: Exception) {
+                                            Log.e("CameraScanScreen", "Failed to turn off torch", e)
+                                        }
+                                        viewModel.turnOffFlash()
+                                        viewModel.addCapturedImage(image)
+                                    }
+
+                                    override fun onError(exception: ImageCaptureException) {
+                                        Log.e("CameraScanScreen", "Capture failed: ${exception.message}", exception)
+                                    }
+                                }
+                            )
+                        },
+                        onProceedClick = {
+                            viewModel.saveDocumentAndFinish { docId ->
+                                onNavigateToEdit(docId)
                             }
-                        }
+                        },
+                        onGalleryClick = {
+                            galleryLauncher.launch("image/*")
+                        },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                },
-                onProceedClick = {
-                    viewModel.saveDocumentAndFinish { docId ->
-                        onNavigateToEdit(docId)
-                    }
-                },
-                onGalleryClick = {
-                    galleryLauncher.launch("image/*")
-                },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 36.dp, start = 20.dp, end = 20.dp)
-            )
+                }
+            }
 
             // Camera Shutter Flash Overlay Effect
             AnimatedVisibility(
@@ -678,151 +750,134 @@ fun CameraScanScreen(
 @Composable
 fun TopCameraToolbar(
     flashMode: FlashMode,
-    isAutoCapture: Boolean,
-    isMultiPage: Boolean,
-    isColorScan: Boolean,
     onToggleFlash: () -> Unit,
-    onToggleAuto: () -> Unit,
-    onToggleMultiPage: () -> Unit,
-    onToggleColorScan: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Row(
         modifier = modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        // Top Navigation & Flash Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            onClick = onClose,
+            shape = CircleShape,
+            color = Color(0x990F172A),
+            modifier = Modifier.size(44.dp)
         ) {
-            Surface(
-                onClick = onClose,
-                shape = CircleShape,
-                color = Color(0x990F172A),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "بازگشت", tint = Color.White)
-                }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0x990F172A),
-                modifier = Modifier.padding(horizontal = 8.dp)
-            ) {
-                Text(
-                    text = "اسکنر اسناد",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                )
-            }
-
-            Surface(
-                onClick = onToggleFlash,
-                shape = CircleShape,
-                color = Color(0x990F172A),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = when (flashMode) {
-                            FlashMode.OFF -> Icons.Default.FlashOff
-                            FlashMode.ON -> Icons.Default.FlashOn
-                            FlashMode.TORCH -> Icons.Default.Highlight
-                            FlashMode.AUTO -> Icons.Default.FlashAuto
-                        },
-                        contentDescription = "فلاش",
-                        tint = if (flashMode != FlashMode.OFF) Color(0xFF00E5FF) else Color.White
-                    )
-                }
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "بازگشت", tint = Color.White)
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Mode Selector Chips Bar
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = Color(0xBB0F172A),
-            shadowElevation = 6.dp
+            onClick = onToggleFlash,
+            shape = CircleShape,
+            color = Color(0x990F172A),
+            modifier = Modifier.size(44.dp)
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = when (flashMode) {
+                        FlashMode.OFF -> Icons.Default.FlashOff
+                        FlashMode.ON -> Icons.Default.FlashOn
+                        FlashMode.TORCH -> Icons.Default.Highlight
+                        FlashMode.AUTO -> Icons.Default.FlashAuto
+                    },
+                    contentDescription = "فلاش",
+                    tint = if (flashMode != FlashMode.OFF) Color(0xFF00E5FF) else Color.White
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ScanModeSelectorBar(
+    isAutoCapture: Boolean,
+    isMultiPage: Boolean,
+    isColorScan: Boolean,
+    onToggleAuto: () -> Unit,
+    onToggleMultiPage: () -> Unit,
+    onToggleColorScan: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xBB0F172A),
+        shadowElevation = 6.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Color Scan Toggle Chip
+            Surface(
+                onClick = onToggleColorScan,
+                shape = RoundedCornerShape(18.dp),
+                color = if (isColorScan) Color(0xFFE11D48) else Color(0x22FFFFFF)
             ) {
-                // Color Scan Toggle Chip
-                Surface(
-                    onClick = onToggleColorScan,
-                    shape = RoundedCornerShape(18.dp),
-                    color = if (isColorScan) Color(0xFFE11D48) else Color(0x22FFFFFF)
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Palette,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isColorScan) "تصویر رنگی" else "اسناد B/W",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Auto Capture Toggle Chip
-                Surface(
-                    onClick = onToggleAuto,
-                    shape = RoundedCornerShape(18.dp),
-                    color = if (isAutoCapture) Color(0xFF2563EB) else Color(0x22FFFFFF)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = if (isAutoCapture) "خودکار" else "دستی",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Multi-page Toggle Chip
-                Surface(
-                    onClick = onToggleMultiPage,
-                    shape = RoundedCornerShape(18.dp),
-                    color = if (isMultiPage) Color(0xFF059669) else Color(0x22FFFFFF)
-                ) {
+                    Icon(
+                        imageVector = Icons.Default.Palette,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = if (isMultiPage) "چند صفحه‌ای" else "تک صفحه‌ای",
+                        text = if (isColorScan) "تصویر رنگی" else "اسناد B/W",
                         color = Color.White,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
+            }
+
+            // Auto Capture Toggle Chip
+            Surface(
+                onClick = onToggleAuto,
+                shape = RoundedCornerShape(18.dp),
+                color = if (isAutoCapture) Color(0xFF2563EB) else Color(0x22FFFFFF)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isAutoCapture) "خودکار" else "دستی",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Multi-page Toggle Chip
+            Surface(
+                onClick = onToggleMultiPage,
+                shape = RoundedCornerShape(18.dp),
+                color = if (isMultiPage) Color(0xFF059669) else Color(0x22FFFFFF)
+            ) {
+                Text(
+                    text = if (isMultiPage) "چند صفحه‌ای" else "تک صفحه‌ای",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                )
             }
         }
     }

@@ -215,30 +215,6 @@ fun EditDocumentScreen(
                     }
                 },
                 actions = {
-                    // Back to Image Scan Button
-                    FilledTonalButton(
-                        onClick = { onNavigateToRescan() },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.padding(end = 4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = "بازگشت به اسکن",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "اسکن مجدد",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
                     // Save / Export PDF
                     IconButton(onClick = {
                         viewModel.applyCropAndSave {
@@ -264,21 +240,6 @@ fun EditDocumentScreen(
                             expanded = showOptionsMenu,
                             onDismissRequest = { showOptionsMenu = false }
                         ) {
-                            DropdownMenuItem(
-                                text = { Text("بازگشت به اسکن / افزودن تصویر") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.CameraAlt,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                onClick = {
-                                    showOptionsMenu = false
-                                    onNavigateToRescan()
-                                }
-                            )
                             DropdownMenuItem(
                                 text = { Text("تغییر نام سند") },
                                 leadingIcon = {

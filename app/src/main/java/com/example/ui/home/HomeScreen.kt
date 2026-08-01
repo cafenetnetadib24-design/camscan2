@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -1119,6 +1121,9 @@ fun HomeScreen(
     if (showAdDialog) {
         LaunchedEffect(Unit) {
             AdManager.markAdShown(context)
+            val randomAd = AdManager.getRandomAdInfo(context)
+            adImageUrl = randomAd.first
+            adTargetUrl = randomAd.second
         }
         Dialog(
             onDismissRequest = { showAdDialog = false },
@@ -1128,16 +1133,19 @@ fun HomeScreen(
         ) {
             Surface(
                 modifier = Modifier
-                    .fillMaxWidth(0.9f)
-                    .wrapContentHeight()
-                    .padding(16.dp),
+                    .fillMaxWidth(0.92f)
+                    .fillMaxHeight(0.85f)
+                    .systemBarsPadding()
+                    .padding(vertical = 12.dp),
                 shape = RoundedCornerShape(24.dp),
                 color = Color.White,
                 tonalElevation = 8.dp,
-                shadowElevation = 12.dp
+                shadowElevation = 16.dp
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     // Top Header Row with Title and Close ("X") Icon Button
@@ -1150,22 +1158,22 @@ fun HomeScreen(
                             Surface(
                                 shape = CircleShape,
                                 color = Color(0xFFEFF6FF),
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Campaign,
                                         contentDescription = "تبلیغات",
                                         tint = Color(0xFF2563EB),
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = "پیشنهاد ویژه",
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp,
+                                fontSize = 18.sp,
                                 color = Color(0xFF1E293B)
                             )
                         }
@@ -1174,26 +1182,26 @@ fun HomeScreen(
                         IconButton(
                             onClick = { showAdDialog = false },
                             modifier = Modifier
-                                .size(32.dp)
+                                .size(36.dp)
                                 .background(Color(0xFFF1F5F9), CircleShape)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Close,
                                 contentDescription = "بستن",
                                 tint = Color(0xFF64748B),
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Ad Image Banner Container
+                    // Ad Image Banner Container (Expands to fill available screen height)
                     Box(
                         modifier = Modifier
+                            .weight(1f)
                             .fillMaxWidth()
-                            .height(260.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(18.dp))
                             .background(Color(0xFFF8FAFC))
                             .clickable {
                                 if (adTargetUrl.isNotEmpty()) {
@@ -1220,7 +1228,7 @@ fun HomeScreen(
                     // Action Buttons Row: Open Link + Close
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Button(
                             onClick = {
@@ -1235,19 +1243,22 @@ fun HomeScreen(
                             },
                             modifier = Modifier
                                 .weight(1f)
+                                .height(48.dp)
                                 .bounceClick(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB))
                         ) {
-                            Text("مشاهده لینک تبلیغ", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("مشاهده لینک تبلیغ", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
 
                         OutlinedButton(
                             onClick = { showAdDialog = false },
-                            modifier = Modifier.bounceClick(),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier
+                                .height(48.dp)
+                                .bounceClick(),
+                            shape = RoundedCornerShape(14.dp)
                         ) {
-                            Text("بستن", color = Color(0xFF64748B), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("بستن", color = Color(0xFF64748B), fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }
