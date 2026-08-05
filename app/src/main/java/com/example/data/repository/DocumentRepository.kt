@@ -155,7 +155,8 @@ class DocumentRepository(
         topLeft: android.graphics.PointF = android.graphics.PointF(cropRect.left, cropRect.top),
         topRight: android.graphics.PointF = android.graphics.PointF(cropRect.right, cropRect.top),
         bottomRight: android.graphics.PointF = android.graphics.PointF(cropRect.right, cropRect.bottom),
-        bottomLeft: android.graphics.PointF = android.graphics.PointF(cropRect.left, cropRect.bottom)
+        bottomLeft: android.graphics.PointF = android.graphics.PointF(cropRect.left, cropRect.bottom),
+        isCropOperation: Boolean = false
     ): DocumentPageEntity = withContext(Dispatchers.IO) {
         val origPathToKeep = if (page.originalImagePath.isNotBlank() && File(page.originalImagePath).exists()) {
             page.originalImagePath
@@ -167,6 +168,14 @@ class DocumentRepository(
             ?: BitmapFactory.decodeFile(page.imagePath)
 
         if (origBitmap != null) {
+            val hasCropOrRotation = isCropOperation ||
+                rotationDegrees % 360 != 0 ||
+                cropRect.left > 0.005f || cropRect.top > 0.005f || cropRect.right < 0.995f || cropRect.bottom < 0.995f ||
+                topLeft.x > 0.005f || topLeft.y > 0.005f ||
+                topRight.x < 0.995f || topRight.y > 0.005f ||
+                bottomRight.x < 0.995f || bottomRight.y < 0.995f ||
+                bottomLeft.x > 0.005f || bottomLeft.y < 0.995f
+
             val newBitmap = ImageFilterUtils.applyFilterAndAdjustments(
                 sourceBitmap = origBitmap,
                 filter = filter,
@@ -184,33 +193,61 @@ class DocumentRepository(
             )
 
             val newImagePath = ImageFilterUtils.saveBitmapToAppStorage(context, newBitmap, "proc")
+            val newOrigPath = if (hasCropOrRotation) {
+                ImageFilterUtils.saveBitmapToAppStorage(context, newBitmap, "orig")
+            } else {
+                origPathToKeep
+            }
+
             val newOcrText = OcrEngine.recognizeTextFromBitmap(newBitmap)
 
-            // Clean up previous image file if it exists, is different, and is not the original file
+            // Clean up previous image files if they are no longer referenced
             try {
-                if (page.imagePath.isNotBlank() && page.imagePath != newImagePath && page.imagePath != origPathToKeep && File(page.imagePath).exists()) {
+                if (hasCropOrRotation && page.originalImagePath.isNotBlank() && page.originalImagePath != newOrigPath && File(page.originalImagePath).exists()) {
+                    File(page.originalImagePath).delete()
+                }
+                if (page.imagePath.isNotBlank() && page.imagePath != newImagePath && page.imagePath != newOrigPath && page.imagePath != page.originalImagePath && File(page.imagePath).exists()) {
                     File(page.imagePath).delete()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
 
-            val updatedPage = page.copy(
-                imagePath = newImagePath,
-                originalImagePath = origPathToKeep,
-                filterType = filter.name,
-                cropLeft = cropRect.left,
-                cropTop = cropRect.top,
-                cropRight = cropRect.right,
-                cropBottom = cropRect.bottom,
-                rotationDegrees = rotationDegrees,
-                brightness = brightness,
-                contrast = contrast,
-                saturation = saturation,
-                warmth = warmth,
-                sharpness = sharpness,
-                ocrText = newOcrText
-            )
+            val updatedPage = if (hasCropOrRotation) {
+                page.copy(
+                    imagePath = newImagePath,
+                    originalImagePath = newOrigPath,
+                    filterType = filter.name,
+                    cropLeft = 0f,
+                    cropTop = 0f,
+                    cropRight = 1f,
+                    cropBottom = 1f,
+                    rotationDegrees = 0,
+                    brightness = 0f,
+                    contrast = 1f,
+                    saturation = 1f,
+                    warmth = 0f,
+                    sharpness = 1f,
+                    ocrText = newOcrText
+                )
+            } else {
+                page.copy(
+                    imagePath = newImagePath,
+                    originalImagePath = newOrigPath,
+                    filterType = filter.name,
+                    cropLeft = cropRect.left,
+                    cropTop = cropRect.top,
+                    cropRight = cropRect.right,
+                    cropBottom = cropRect.bottom,
+                    rotationDegrees = rotationDegrees,
+                    brightness = brightness,
+                    contrast = contrast,
+                    saturation = saturation,
+                    warmth = warmth,
+                    sharpness = sharpness,
+                    ocrText = newOcrText
+                )
+            }
 
             documentDao.updatePage(updatedPage)
 

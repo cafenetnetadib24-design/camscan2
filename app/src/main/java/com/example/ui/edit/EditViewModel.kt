@@ -233,34 +233,27 @@ class EditViewModel(
     }
 
     fun applyCropAndSave(onComplete: () -> Unit = {}) {
-        applyChangesToCurrentPage(onComplete)
+        applyChangesToCurrentPage(isCropOperation = true, onComplete = onComplete)
     }
-
-    private var saveAdjustmentsJob: kotlinx.coroutines.Job? = null
 
     fun updateBrightness(brightness: Float) {
         _uiState.value = _uiState.value.copy(brightness = brightness)
-        scheduleSaveAdjustments()
     }
 
     fun updateContrast(contrast: Float) {
         _uiState.value = _uiState.value.copy(contrast = contrast)
-        scheduleSaveAdjustments()
     }
 
     fun updateSaturation(saturation: Float) {
         _uiState.value = _uiState.value.copy(saturation = saturation)
-        scheduleSaveAdjustments()
     }
 
     fun updateWarmth(warmth: Float) {
         _uiState.value = _uiState.value.copy(warmth = warmth)
-        scheduleSaveAdjustments()
     }
 
     fun updateSharpness(sharpness: Float) {
         _uiState.value = _uiState.value.copy(sharpness = sharpness)
-        scheduleSaveAdjustments()
     }
 
     fun resetAdjustments() {
@@ -271,47 +264,9 @@ class EditViewModel(
             warmth = 0f,
             sharpness = 1f
         )
-        scheduleSaveAdjustments()
     }
 
-    private fun scheduleSaveAdjustments() {
-        saveAdjustmentsJob?.cancel()
-        saveAdjustmentsJob = viewModelScope.launch {
-            kotlinx.coroutines.delay(450)
-            applyChangesQuietly()
-        }
-    }
-
-    private suspend fun applyChangesQuietly() {
-        val pages = _uiState.value.pages
-        val index = _uiState.value.currentPageIndex
-        if (index !in pages.indices) return
-        val page = pages[index]
-
-        val updatedPage = repository.updatePageFilterAndAdjustments(
-            page = page,
-            filter = _uiState.value.selectedFilter,
-            cropRect = _uiState.value.cropRect,
-            rotationDegrees = _uiState.value.rotationDegrees,
-            brightness = _uiState.value.brightness,
-            contrast = _uiState.value.contrast,
-            saturation = _uiState.value.saturation,
-            warmth = _uiState.value.warmth,
-            sharpness = _uiState.value.sharpness,
-            topLeft = _uiState.value.topLeft,
-            topRight = _uiState.value.topRight,
-            bottomRight = _uiState.value.bottomRight,
-            bottomLeft = _uiState.value.bottomLeft
-        )
-
-        val updatedPages = pages.toMutableList().apply { set(index, updatedPage) }
-        _uiState.value = _uiState.value.copy(
-            pages = updatedPages,
-            currentOcrText = updatedPage.ocrText
-        )
-    }
-
-    private fun applyChangesToCurrentPage(onComplete: () -> Unit = {}) {
+    fun applyChangesToCurrentPage(isCropOperation: Boolean = false, onComplete: () -> Unit = {}) {
         val pages = _uiState.value.pages
         val index = _uiState.value.currentPageIndex
         if (index !in pages.indices) return
@@ -332,12 +287,24 @@ class EditViewModel(
                 topLeft = _uiState.value.topLeft,
                 topRight = _uiState.value.topRight,
                 bottomRight = _uiState.value.bottomRight,
-                bottomLeft = _uiState.value.bottomLeft
+                bottomLeft = _uiState.value.bottomLeft,
+                isCropOperation = isCropOperation
             )
 
             val updatedPages = pages.toMutableList().apply { set(index, updatedPage) }
             _uiState.value = _uiState.value.copy(
                 pages = updatedPages,
+                cropRect = RectF(updatedPage.cropLeft, updatedPage.cropTop, updatedPage.cropRight, updatedPage.cropBottom),
+                topLeft = PointF(updatedPage.cropLeft, updatedPage.cropTop),
+                topRight = PointF(updatedPage.cropRight, updatedPage.cropTop),
+                bottomRight = PointF(updatedPage.cropRight, updatedPage.cropBottom),
+                bottomLeft = PointF(updatedPage.cropLeft, updatedPage.cropBottom),
+                rotationDegrees = updatedPage.rotationDegrees,
+                brightness = updatedPage.brightness,
+                contrast = updatedPage.contrast,
+                saturation = updatedPage.saturation,
+                warmth = updatedPage.warmth,
+                sharpness = updatedPage.sharpness,
                 currentOcrText = updatedPage.ocrText,
                 isProcessing = false
             )
