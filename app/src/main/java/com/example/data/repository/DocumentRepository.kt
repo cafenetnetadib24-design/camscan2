@@ -157,7 +157,13 @@ class DocumentRepository(
         bottomRight: android.graphics.PointF = android.graphics.PointF(cropRect.right, cropRect.bottom),
         bottomLeft: android.graphics.PointF = android.graphics.PointF(cropRect.left, cropRect.bottom)
     ): DocumentPageEntity = withContext(Dispatchers.IO) {
-        val origBitmap = BitmapFactory.decodeFile(page.originalImagePath)
+        val origPathToKeep = if (page.originalImagePath.isNotBlank() && File(page.originalImagePath).exists()) {
+            page.originalImagePath
+        } else {
+            page.imagePath
+        }
+
+        val origBitmap = BitmapFactory.decodeFile(origPathToKeep)
             ?: BitmapFactory.decodeFile(page.imagePath)
 
         if (origBitmap != null) {
@@ -178,15 +184,11 @@ class DocumentRepository(
             )
 
             val newImagePath = ImageFilterUtils.saveBitmapToAppStorage(context, newBitmap, "proc")
-            val newOrigPath = ImageFilterUtils.saveBitmapToAppStorage(context, newBitmap, "orig")
             val newOcrText = OcrEngine.recognizeTextFromBitmap(newBitmap)
 
-            // Clean up previous image files if they exist and are different
+            // Clean up previous image file if it exists, is different, and is not the original file
             try {
-                if (page.originalImagePath.isNotBlank() && page.originalImagePath != newOrigPath && File(page.originalImagePath).exists()) {
-                    File(page.originalImagePath).delete()
-                }
-                if (page.imagePath.isNotBlank() && page.imagePath != newImagePath && File(page.imagePath).exists()) {
+                if (page.imagePath.isNotBlank() && page.imagePath != newImagePath && page.imagePath != origPathToKeep && File(page.imagePath).exists()) {
                     File(page.imagePath).delete()
                 }
             } catch (e: Exception) {
@@ -195,18 +197,18 @@ class DocumentRepository(
 
             val updatedPage = page.copy(
                 imagePath = newImagePath,
-                originalImagePath = newOrigPath,
+                originalImagePath = origPathToKeep,
                 filterType = filter.name,
-                cropLeft = 0f,
-                cropTop = 0f,
-                cropRight = 1f,
-                cropBottom = 1f,
-                rotationDegrees = 0,
-                brightness = 0f,
-                contrast = 1f,
-                saturation = 1f,
-                warmth = 0f,
-                sharpness = 1f,
+                cropLeft = cropRect.left,
+                cropTop = cropRect.top,
+                cropRight = cropRect.right,
+                cropBottom = cropRect.bottom,
+                rotationDegrees = rotationDegrees,
+                brightness = brightness,
+                contrast = contrast,
+                saturation = saturation,
+                warmth = warmth,
+                sharpness = sharpness,
                 ocrText = newOcrText
             )
 

@@ -307,17 +307,6 @@ class EditViewModel(
         val updatedPages = pages.toMutableList().apply { set(index, updatedPage) }
         _uiState.value = _uiState.value.copy(
             pages = updatedPages,
-            cropRect = RectF(0f, 0f, 1f, 1f),
-            topLeft = PointF(0f, 0f),
-            topRight = PointF(1f, 0f),
-            bottomRight = PointF(1f, 1f),
-            bottomLeft = PointF(0f, 1f),
-            rotationDegrees = 0,
-            brightness = 0f,
-            contrast = 1f,
-            saturation = 1f,
-            warmth = 0f,
-            sharpness = 1f,
             currentOcrText = updatedPage.ocrText
         )
     }
@@ -349,17 +338,6 @@ class EditViewModel(
             val updatedPages = pages.toMutableList().apply { set(index, updatedPage) }
             _uiState.value = _uiState.value.copy(
                 pages = updatedPages,
-                cropRect = RectF(0f, 0f, 1f, 1f),
-                topLeft = PointF(0f, 0f),
-                topRight = PointF(1f, 0f),
-                bottomRight = PointF(1f, 1f),
-                bottomLeft = PointF(0f, 1f),
-                rotationDegrees = 0,
-                brightness = 0f,
-                contrast = 1f,
-                saturation = 1f,
-                warmth = 0f,
-                sharpness = 1f,
                 currentOcrText = updatedPage.ocrText,
                 isProcessing = false
             )

@@ -156,6 +156,35 @@ fun EditDocumentScreen(
         }
     }
 
+    val filteredBaseBitmap = remember(
+        originalBitmap,
+        uiState.rotationDegrees,
+        uiState.topLeft,
+        uiState.topRight,
+        uiState.bottomRight,
+        uiState.bottomLeft,
+        uiState.cropRect,
+        uiState.selectedFilter
+    ) {
+        originalBitmap?.let { bmp ->
+            com.example.util.ImageFilterUtils.applyFilterAndAdjustments(
+                sourceBitmap = bmp,
+                filter = uiState.selectedFilter,
+                brightness = 0f,
+                contrast = 1f,
+                saturation = 1f,
+                warmth = 0f,
+                sharpness = 1f,
+                rotationDegrees = uiState.rotationDegrees,
+                cropRect = uiState.cropRect,
+                topLeft = uiState.topLeft,
+                topRight = uiState.topRight,
+                bottomRight = uiState.bottomRight,
+                bottomLeft = uiState.bottomLeft
+            )
+        }
+    }
+
     val adjustmentColorMatrix = remember(
         uiState.brightness,
         uiState.contrast,
@@ -501,7 +530,8 @@ fun EditDocumentScreen(
                     )
                 } ?: CircularProgressIndicator(color = Color(0xFF2563EB))
             } else {
-                currentBitmap?.let { bitmap ->
+                val previewBitmap = filteredBaseBitmap ?: currentBitmap
+                previewBitmap?.let { bitmap ->
                     Box(modifier = Modifier.fillMaxSize()) {
                         Image(
                             bitmap = bitmap.asImageBitmap(),
