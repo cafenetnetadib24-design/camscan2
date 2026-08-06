@@ -361,14 +361,108 @@ class EditViewModel(
         }
     }
 
-    fun deleteCurrentPage() {
+    fun deletePageAt(index: Int) {
         val pages = _uiState.value.pages
-        val index = _uiState.value.currentPageIndex
         if (index in pages.indices) {
             val page = pages[index]
             viewModelScope.launch {
                 repository.deletePage(page.id, documentId)
                 loadDocument()
+            }
+        }
+    }
+
+    fun deleteCurrentPage() {
+        deletePageAt(_uiState.value.currentPageIndex)
+    }
+
+    fun deleteDuplicatePages(onComplete: (Int) -> Unit) {
+        val currentPages = _uiState.value.pages
+        if (currentPages.size <= 1) {
+            onComplete(0)
+            return
+        }
+
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _uiState.value = _uiState.value.copy(isProcessing = true)
+
+            val uniquePages = mutableListOf<DocumentPageEntity>()
+            val duplicatesToDelete = mutableListOf<DocumentPageEntity>()
+
+            fun getPageSignature(page: DocumentPageEntity): ByteArray? {
+                val path = if (page.originalImagePath.isNotBlank() && java.io.File(page.originalImagePath).exists()) {
+                    page.originalImagePath
+                } else if (page.imagePath.isNotBlank() && java.io.File(page.imagePath).exists()) {
+                    page.imagePath
+                } else {
+                    return null
+                }
+
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = 16
+                }
+                val bmp = BitmapFactory.decodeFile(path, options) ?: return null
+                val resized = Bitmap.createScaledBitmap(bmp, 16, 16, false)
+                val pixels = IntArray(256)
+                resized.getPixels(pixels, 0, 16, 0, 0, 16, 16)
+                resized.recycle()
+                if (bmp != resized && !bmp.isRecycled) {
+                    bmp.recycle()
+                }
+
+                val bytes = ByteArray(256)
+                for (i in pixels.indices) {
+                    val c = pixels[i]
+                    val r = (c shr 16) and 0xFF
+                    val g = (c shr 8) and 0xFF
+                    val b = c and 0xFF
+                    bytes[i] = ((r * 0.299 + g * 0.587 + b * 0.114).toInt() and 0xFF).toByte()
+                }
+                return bytes
+            }
+
+            val signatures = mutableListOf<ByteArray?>()
+
+            for (page in currentPages) {
+                val sig = getPageSignature(page)
+                var isDuplicate = false
+
+                if (sig != null) {
+                    for (existingSig in signatures) {
+                        if (existingSig != null) {
+                            var diffSum = 0
+                            for (i in sig.indices) {
+                                diffSum += Math.abs((sig[i].toInt() and 0xFF) - (existingSig[i].toInt() and 0xFF))
+                            }
+                            val avgDiff = diffSum / 256.0
+                            if (avgDiff < 8.0) {
+                                isDuplicate = true
+                                break
+                            }
+                        }
+                    }
+                }
+
+                if (isDuplicate) {
+                    duplicatesToDelete.add(page)
+                } else {
+                    uniquePages.add(page)
+                    signatures.add(sig)
+                }
+            }
+
+            for (dup in duplicatesToDelete) {
+                repository.deletePage(dup.id, documentId)
+            }
+
+            val removedCount = duplicatesToDelete.size
+
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(isProcessing = false)
+                if (removedCount > 0) {
+                    loadDocument()
+                }
+                onComplete(removedCount)
             }
         }
     }

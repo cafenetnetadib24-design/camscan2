@@ -57,7 +57,7 @@ class CameraViewModel(private val repository: DocumentRepository) : ViewModel() 
     }
 
     fun setScanMode(isColorScan: Boolean) {
-        val defaultFilter = if (isColorScan) ScanFilter.DESKTOP_COLOR else ScanFilter.BLACK_WHITE
+        val defaultFilter = if (isColorScan) ScanFilter.ORIGINAL else ScanFilter.BLACK_WHITE
         _uiState.value = _uiState.value.copy(
             isColorScan = isColorScan,
             scanFilter = defaultFilter

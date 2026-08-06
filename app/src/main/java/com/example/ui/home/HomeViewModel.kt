@@ -257,7 +257,7 @@ class HomeViewModel(private val repository: DocumentRepository) : ViewModel() {
                 title = null,
                 folderId = _selectedFolderId.value?.takeIf { it > 0 },
                 capturedBitmaps = bitmaps,
-                filter = ScanFilter.BLACK_WHITE
+                filter = ScanFilter.ORIGINAL
             )
             _isLoading.value = false
             onComplete(newDocId)
@@ -275,7 +275,7 @@ class HomeViewModel(private val repository: DocumentRepository) : ViewModel() {
                     title = null,
                     folderId = _selectedFolderId.value?.takeIf { it > 0 },
                     capturedBitmaps = bitmaps,
-                    filter = ScanFilter.BLACK_WHITE
+                    filter = ScanFilter.ORIGINAL
                 )
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     _isLoading.value = false

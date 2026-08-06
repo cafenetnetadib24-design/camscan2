@@ -56,7 +56,7 @@ class DocumentRepository(
         title: String?,
         folderId: Long?,
         capturedBitmaps: List<Bitmap>,
-        filter: ScanFilter = ScanFilter.MAGIC_COLOR
+        filter: ScanFilter = ScanFilter.ORIGINAL
     ): Long = withContext(Dispatchers.IO) {
         if (capturedBitmaps.isEmpty()) return@withContext 0L
 

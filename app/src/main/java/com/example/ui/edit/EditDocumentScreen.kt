@@ -299,6 +299,45 @@ fun EditDocumentScreen(
                                     showMoveFolderDialog = true
                                 }
                             )
+                            if (uiState.pages.size > 1) {
+                                DropdownMenuItem(
+                                    text = { Text("حذف تصاویر تکراری") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        viewModel.deleteDuplicatePages { count ->
+                                            if (count > 0) {
+                                                Toast.makeText(context, "$count تصویر تکراری حذف شد", Toast.LENGTH_SHORT).show()
+                                            } else {
+                                                Toast.makeText(context, "هیچ تصویر تکراری پیدا نشد", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("حذف این برگه") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        viewModel.deleteCurrentPage()
+                                        Toast.makeText(context, "برگه حذف شد", Toast.LENGTH_SHORT).show()
+                                    }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("انتقال به سطل زباله", color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = {
@@ -357,6 +396,24 @@ fun EditDocumentScreen(
                                         contentDescription = "Page ${idx + 1}",
                                         contentScale = ContentScale.Crop,
                                         modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .size(18.dp)
+                                        .background(Color(0xDDE11D48), RoundedCornerShape(bottomEnd = 6.dp))
+                                        .clickable {
+                                            viewModel.deletePageAt(idx)
+                                            Toast.makeText(context, "برگه ${idx + 1} حذف شد", Toast.LENGTH_SHORT).show()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "حذف برگه",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(11.dp)
                                     )
                                 }
                                 Box(
